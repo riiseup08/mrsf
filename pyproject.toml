@@ -44,6 +44,10 @@ exclude = [
     "*.tar.gz",
     "*.log",
     "*.csv",
+    "*.gguf",
+    "models/",
+    "canterbury/",
     "dist/",
     "venv/",
+    "__pycache__/",
 ]
