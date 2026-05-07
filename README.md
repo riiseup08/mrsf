@@ -1,9 +1,12 @@
 # MRSF — Model-Relative Surprise Format
 
+> **Python Package:** `pymrsf`
+
 **A novel compression and retrieval system that uses LLM knowledge to achieve efficient storage and intelligent RAG chunk filtering.**
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI](https://img.shields.io/badge/package-pymrsf-brightgreen.svg)](https://github.com/riiseup08/mrsf)
 
 ## 🌟 What is MRSF?
 
@@ -51,12 +54,14 @@ Python 3.8+
 pip install llama-cpp-python faiss-cpu sentence-transformers python-dotenv msgpack
 ```
 
-### Clone the Repository
+### Install from Source
 ```bash
 git clone https://github.com/riiseup08/mrsf.git
 cd mrsf
 pip install -e .
 ```
+
+This installs the **`pymrsf`** package, which you can then import in your Python code.
 
 ### Download a Model
 For local inference, download a GGUF model (e.g., Mistral 7B):
