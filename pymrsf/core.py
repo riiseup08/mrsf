@@ -1,13 +1,22 @@
 """
 pymrsf — multi-provider backend
 Supports:
-  - local    : any GGUF model via llama-cpp-python
-  - openai   : GPT-3.5, GPT-4 via OpenAI logprobs API
-  - anthropic: NOT supported (no logprobs API exposed)
+  - local    : any GGUF model via llama-cpp-python (full feature support)
+  - openai   : GPT-3.5, GPT-4 via OpenAI API (basic RAG scoring only)
+  - anthropic: Claude via Anthropic API (basic RAG scoring only)
 
 Set provider in .env:
-  PYMRSF_PROVIDER=local    # default
-  PYMRSF_PROVIDER=openai
+  PYMRSF_PROVIDER=local      # default (requires local model)
+  PYMRSF_PROVIDER=openai     # lightweight, API-based
+  PYMRSF_PROVIDER=anthropic  # lightweight, API-based
+
+Installation:
+  pip install pymrsf[local]     # for local models
+  pip install pymrsf[openai]    # for OpenAI API
+  pip install pymrsf[anthropic] # for Anthropic API
+  pip install pymrsf[all]       # everything
+
+Note: Advanced features (knowledge probing, compression) require local provider.
 """
 
 import os
@@ -32,8 +41,17 @@ def _ensure_model():
     if _lm_loaded:
         return
     if PROVIDER == "local":
-        import numpy as np
-        from llama_cpp import Llama
+        try:
+            import numpy as np
+            from llama_cpp import Llama
+        except ImportError:
+            raise ImportError(
+                "\n[pymrsf] Local provider requires llama-cpp-python.\n"
+                "  Install with: pip install pymrsf[local]\n"
+                "  Or use a lightweight API provider instead:\n"
+                "    Set PYMRSF_PROVIDER=openai (requires OpenAI API key)\n"
+                "    Set PYMRSF_PROVIDER=anthropic (requires Anthropic API key)\n"
+            )
 
         GGUF_PATH     = os.getenv("PYMRSF_MODEL_PATH",    "./models/mistral-7b-v0.1.Q4_K_M.gguf")
         N_CTX         = int(os.getenv("PYMRSF_N_CTX",         "4096"))
@@ -191,11 +209,26 @@ def _load_openai_backend():
     try:
         from openai import OpenAI
     except ImportError:
-        raise ImportError("[pymrsf] OpenAI provider requires: pip install openai")
+        raise ImportError(
+            "\n[pymrsf] OpenAI provider requires the openai package.\n"
+            "  Install with: pip install pymrsf[openai]\n"
+            "  Or use the local provider: Set PYMRSF_PROVIDER=local\n"
+        )
 
     MODEL_VERSION = os.getenv("PYMRSF_MODEL_VERSION", "gpt-3.5-turbo")
-    _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    print(f"[pymrsf] Using OpenAI provider: {MODEL_VERSION}\n")
+    api_key = os.getenv("OPENAI_API_KEY")
+    
+    if not api_key:
+        raise ValueError(
+            "\n[pymrsf] OpenAI provider requires OPENAI_API_KEY environment variable.\n"
+            "  Set it in your .env file or export it:\n"
+            "    export OPENAI_API_KEY='sk-...'\n"
+            "  Or use the local provider: Set PYMRSF_PROVIDER=local\n"
+        )
+    
+    _client = OpenAI(api_key=api_key)
+    print(f"[pymrsf] Using OpenAI provider: {MODEL_VERSION}")
+    print(f"[pymrsf] Note: Advanced features (knowledge probing) require local provider.\n")
 
     def tokenize(text: str) -> list:
         try:
@@ -218,9 +251,13 @@ def _load_openai_backend():
 
     def _quantized_argmax(raw_logits) -> int:
         raise NotImplementedError(
-            "[pymrsf] quantized_argmax is not available for OpenAI provider.\n"
-            "  mrsf_write / mrsf_read require a local model."
+            "\n[pymrsf] This feature requires the local provider (not available with OpenAI).\n"
+            "  Advanced features require direct model access via llama-cpp-python.\n"
+            "  Install with: pip install pymrsf[local]\n"
+            "  And set: PYMRSF_PROVIDER=local\n"
         )
+
+    quantized_argmax = _quantized_argmax
 
     def get_surprises(text: str) -> tuple:
         import math
@@ -252,21 +289,149 @@ def _load_openai_backend():
 
     def compute_delta(text_or_ids) -> list:
         raise NotImplementedError(
-            "[pymrsf] compute_delta is not available for OpenAI provider.\n"
-            "  mrsf_write requires a local model."
+            "\n[pymrsf] This feature requires the local provider (not available with OpenAI).\n"
+            "  Advanced features require direct model access via llama-cpp-python.\n"
+            "  Install with: pip install pymrsf[local]\n"
+            "  And set: PYMRSF_PROVIDER=local\n"
         )
 
     class ModelSession:
         def __init__(self):
             raise NotImplementedError(
-                "[pymrsf] ModelSession requires local provider.\n"
-                "  mrsf_write / mrsf_read require a local model."
+                "\n[pymrsf] ModelSession requires the local provider (not available with OpenAI).\n"
+                "  This feature requires direct model access via llama-cpp-python.\n"
+                "  Install with: pip install pymrsf[local]\n"
+                "  And set: PYMRSF_PROVIDER=local\n"
             )
 
     def next_token_greedy(context_ids: list) -> int:
         raise NotImplementedError(
-            "[pymrsf] next_token_greedy is not available for OpenAI provider.\n"
-            "  mrsf_write / mrsf_read require a local model."
+            "\n[pymrsf] This feature requires the local provider (not available with OpenAI).\n"
+            "  Advanced features require direct model access via llama-cpp-python.\n"
+            "  Install with: pip install pymrsf[local]\n"
+            "  And set: PYMRSF_PROVIDER=local\n"
+        )
+
+    return {
+        "tokenize": tokenize,
+        "detokenize": detokenize,
+        "quantized_argmax": _quantized_argmax,
+        "get_surprises": get_surprises,
+        "compute_delta": compute_delta,
+        "ModelSession": ModelSession,
+        "next_token_greedy": next_token_greedy,
+        "lm": None,
+    }
+
+
+# ── Anthropic provider ─────────────────────────────────────────────────────────
+
+def _load_anthropic_backend():
+    """Dynamically load the Anthropic backend functions.
+    
+    Note: Anthropic API does not expose token logprobs, so novelty detection
+    is limited. This provider is best used for embeddings and basic RAG scoring
+    without novelty-based filtering.
+    """
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        raise ImportError(
+            "\n[pymrsf] Anthropic provider requires the anthropic package.\n"
+            "  Install with: pip install pymrsf[anthropic]\n"
+            "  Or use the local provider: Set PYMRSF_PROVIDER=local\n"
+        )
+
+    MODEL_VERSION = os.getenv("PYMRSF_MODEL_VERSION", "claude-3-5-sonnet-20241022")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    
+    if not api_key:
+        raise ValueError(
+            "\n[pymrsf] Anthropic provider requires ANTHROPIC_API_KEY environment variable.\n"
+            "  Set it in your .env file or export it:\n"
+            "    export ANTHROPIC_API_KEY='sk-ant-...'\n"
+            "  Or use the local provider: Set PYMRSF_PROVIDER=local\n"
+        )
+    
+    _client = Anthropic(api_key=api_key)
+    print(f"[pymrsf] Using Anthropic provider: {MODEL_VERSION}")
+    print(f"[pymrsf] Note: Anthropic doesn't expose logprobs - novelty detection unavailable.")
+    print(f"[pymrsf]       Using relevance-only scoring for RAG.\n")
+
+    def tokenize(text: str) -> list:
+        """Approximate tokenization using Claude's tokenizer or fallback."""
+        try:
+            import tiktoken
+            # Use GPT-4 tokenizer as approximation for Claude
+            enc = tiktoken.encoding_for_model("gpt-4")
+            return enc.encode(text)
+        except Exception:
+            # Fallback: simple whitespace split
+            return text.split()
+
+    def detokenize(ids: list) -> str:
+        """Convert token IDs back to string."""
+        try:
+            import tiktoken
+            enc = tiktoken.encoding_for_model("gpt-4")
+            return enc.decode(ids)
+        except Exception:
+            return " ".join(str(i) for i in ids)
+
+    def _quantized_argmax(raw_logits) -> int:
+        raise NotImplementedError(
+            "\n[pymrsf] This feature requires the local provider (not available with Anthropic).\n"
+            "  Anthropic API does not expose token logprobs.\n"
+            "  Install with: pip install pymrsf[local]\n"
+            "  And set: PYMRSF_PROVIDER=local\n"
+        )
+
+    def get_surprises(text: str) -> tuple:
+        """
+        Anthropic doesn't provide logprobs, so we can't detect surprises.
+        Return empty surprises and basic token heatmap.
+        """
+        tokens = tokenize(text)
+        n = len(tokens)
+        surprises = []
+        heatmap = []
+        
+        # Since we can't determine surprises, mark all as not surprised
+        for i, tok_id in enumerate(tokens):
+            tok_str = str(tok_id)  # Approximate
+            heatmap.append({
+                "token": tok_str,
+                "surprised": False,
+                "position": i,
+                "logprob": None,
+                "prob": None,
+            })
+        
+        return surprises, heatmap, n
+
+    def compute_delta(text_or_ids) -> list:
+        raise NotImplementedError(
+            "\n[pymrsf] This feature requires the local provider (not available with Anthropic).\n"
+            "  Anthropic API does not expose token logprobs.\n"
+            "  Install with: pip install pymrsf[local]\n"
+            "  And set: PYMRSF_PROVIDER=local\n"
+        )
+
+    class ModelSession:
+        def __init__(self):
+            raise NotImplementedError(
+                "\n[pymrsf] ModelSession requires the local provider (not available with Anthropic).\n"
+                "  This feature requires direct model access via llama-cpp-python.\n"
+                "  Install with: pip install pymrsf[local]\n"
+                "  And set: PYMRSF_PROVIDER=local\n"
+            )
+
+    def next_token_greedy(context_ids: list) -> int:
+        raise NotImplementedError(
+            "\n[pymrsf] This feature requires the local provider (not available with Anthropic).\n"
+            "  Anthropic API does not expose token logprobs.\n"
+            "  Install with: pip install pymrsf[local]\n"
+            "  And set: PYMRSF_PROVIDER=local\n"
         )
 
     return {
@@ -294,18 +459,12 @@ def _get_backend():
         elif PROVIDER == "openai":
             _backend = _load_openai_backend()
         elif PROVIDER == "anthropic":
-            raise NotImplementedError(
-                "\n[pymrsf] Anthropic / Claude is not supported.\n"
-                "  Anthropic's API does not expose token logprobs — \n"
-                "  which are required for pymrsf's compression calculation.\n"
-                "  Supported providers: local, openai\n"
-                "  See: https://docs.anthropic.com/en/api/messages"
-            )
+            _backend = _load_anthropic_backend()
         else:
             raise ValueError(
                 f"\n[pymrsf] Unknown provider: '{PROVIDER}'\n"
-                f"  Valid options: local, openai\n"
-                f"  Set PYMRSF_PROVIDER in your .env file."
+                f"  Valid options: local, openai, anthropic\n"
+                f"  Set PYMRSF_PROVIDER in your .env file.\n"
             )
     return _backend
 

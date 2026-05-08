@@ -58,7 +58,16 @@ def probe(text: str, verbose: bool = False) -> dict:
     backend = _get_backend()
     lm_obj  = backend.get("lm")
     if lm_obj is None:
-        return {"error": "Knowledge probing requires a local model provider."}
+        return {
+            "error": (
+                "Knowledge probing requires the local provider.\n"
+                "  OpenAI and Anthropic APIs don't expose full token logprobs.\n"
+                "  To use this feature:\n"
+                "    pip install pymrsf[local]\n"
+                "    Set PYMRSF_PROVIDER=local in your .env\n"
+                "  For API-based RAG scoring (without probing), use score_chunk() instead."
+            )
+        }
 
     lm_obj.reset()
     lm_obj.eval(token_ids)
