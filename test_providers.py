@@ -41,8 +41,8 @@ print("=" * 70)
 os.environ["PYMRSF_PROVIDER"] = "openai"
 try:
     # Force backend loading
-    from pymrsf.core import _get_backend
-    _get_backend()
+    from pymrsf.core import get_backend
+    get_backend()
     print("✅ Backend loaded (OpenAI package installed)")
 except ImportError as e:
     if "pip install pymrsf[openai]" in str(e):

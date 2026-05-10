@@ -5,6 +5,42 @@ All notable changes to pymrsf will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-05-10
+
+### Breaking changes
+- `pymrsf.storage`, `pymrsf.inspect`, `pymrsf.benchmark` moved to `pymrsf.experimental`.
+  Top-level re-exports remain for backward compat and will be removed in v0.6.
+- `rebuild_faiss_from_sqlite()` now emits `DeprecationWarning`. Use `reset_index_metadata()`.
+- Default embed behavior is **fail-fast** on provider failure. Set
+  `PYMRSF_ALLOW_PROVIDER_FALLBACK=true` to restore silent fallback (now logged as WARNING).
+
+### New features
+- `pymrsf.experimental` subpackage — MRSF storage clearly scoped as research-grade.
+- `pymrsf.configure_logging(level)` — opt-in to library log output; import is now silent.
+- `pymrsf.configure(embed_timeout=…, embed_model=…)` now takes effect at the next call.
+- HTTP retry on transient embed failures: 3 attempts, exponential backoff (tenacity).
+- `docs/CONCURRENCY.md` — threading model, WAL mode, multi-process patterns documented.
+
+### Fixes
+- Score cache: O(1) LRU eviction via `OrderedDict` (was O(n) min-timestamp scan).
+- Score cache: `deepcopy` moved outside lock — callers no longer serialize on large objects.
+- Score cache: removed unbounded `@lru_cache` on `_cached_text_hash`.
+- `_embed_dim_cache` initialised under `threading.Lock` (double-checked locking).
+- `smart_chunk` offset recovery: O(n) incremental walk (was O(n²) prefix re-detokenize).
+- All `print()` calls converted to `logging` — `import pymrsf` is now side-effect free.
+
+### Tests
+- 83 tests, 0 failures (up from 66).
+- Hypothesis round-trip property tests for MRSF storage (50 examples; 1000-example slow variant).
+- Cache perf + concurrency tests: insertion <100 µs, 8-thread mixed get/set, deepcopy isolation.
+- Config live-wiring tests, chunker O(n) perf test.
+
+### Dependencies added
+- `tenacity>=8.0.0` (core), `hypothesis>=6.0` (dev)
+- `llama-cpp-python` tightened to `>=0.2.50,<0.3.0`
+
+---
+
 ## [0.4.0] - 2026-05-07
 
 ### Added

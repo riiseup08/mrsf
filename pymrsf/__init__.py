@@ -34,8 +34,16 @@ from .experimental import (
 )
 from . import experimental
 
-# Backward compatibility alias (deprecated, will be removed in v0.6)
-rebuild_faiss_from_sqlite = reset_index_metadata
+def rebuild_faiss_from_sqlite(*args, **kwargs):
+    """Deprecated alias for reset_index_metadata(). Removed in v0.6."""
+    import warnings
+    warnings.warn(
+        "rebuild_faiss_from_sqlite is deprecated and will be removed in v0.6. "
+        "Use pymrsf.reset_index_metadata() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return reset_index_metadata(*args, **kwargs)
 from .embeddings import embed, get_embedding_dim
 from .probe import probe, probe_compare
 from .rag import (
@@ -58,7 +66,7 @@ from .cache import (
     reset_cache_stats, clear_cache, clear_embedding_cache
 )
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 
 # ── Centralized runtime configuration ─────────────────────────────────────────
