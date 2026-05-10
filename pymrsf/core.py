@@ -50,8 +50,11 @@ Multi-Provider Functions:
 Note: Advanced features (knowledge probing, compression) require local provider.
 """
 
+import logging
 import os
 from dotenv import load_dotenv
+
+_logger = logging.getLogger("pymrsf.core")
 
 load_dotenv()
 
@@ -95,7 +98,7 @@ def _ensure_model():
                 f"  Set PYMRSF_MODEL_PATH in your .env"
             )
 
-        print(f"[pymrsf] Loading local model: {GGUF_PATH}")
+        _logger.info("Loading local model: %s", GGUF_PATH)
         _lm = Llama(
             model_path   = GGUF_PATH,
             n_ctx        = N_CTX,
@@ -104,10 +107,12 @@ def _ensure_model():
             verbose      = False,
             n_threads    = N_THREADS,
         )
-        print(f"[pymrsf] Model loaded.\n")
+        _logger.info("Model loaded.")
         _lm_loaded = True
     elif PROVIDER == "openai":
         _lm_loaded = True  # No LLM to load, just mark as ready
+    elif PROVIDER == "anthropic":
+        _lm_loaded = True  # No LLM to load — Anthropic doesn't expose logprobs
     else:
         raise ValueError(f"[pymrsf] Unknown provider: '{PROVIDER}'")
 
@@ -258,8 +263,8 @@ def _load_openai_backend():
         )
     
     _client = OpenAI(api_key=api_key)
-    print(f"[pymrsf] Using OpenAI provider: {MODEL_VERSION}")
-    print(f"[pymrsf] Note: Advanced features (knowledge probing) require local provider.\n")
+    _logger.info("Using OpenAI provider: %s", MODEL_VERSION)
+    _logger.info("Note: Advanced features (knowledge probing) require local provider.")
 
     def tokenize(text: str) -> list:
         try:
@@ -267,7 +272,7 @@ def _load_openai_backend():
             enc = tiktoken.encoding_for_model(MODEL_VERSION)
             return enc.encode(text)
         except Exception as e:
-            print(f"[pymrsf] Warning: tiktoken failed ({e}), falling back to split()")
+            _logger.warning("tiktoken failed (%s), falling back to split()", e)
             return text.split()
 
     def detokenize(ids: list) -> str:
@@ -277,7 +282,7 @@ def _load_openai_backend():
             enc = tiktoken.encoding_for_model(MODEL_VERSION)
             return enc.decode(ids)
         except Exception as e:
-            print(f"[pymrsf] Warning: tiktoken decode failed ({e}), falling back to str join")
+            _logger.warning("tiktoken decode failed (%s), falling back to str join", e)
             return " ".join(str(i) for i in ids)
 
     def _quantized_argmax(raw_logits) -> int:
@@ -385,9 +390,8 @@ def _load_anthropic_backend():
         )
     
     _client = Anthropic(api_key=api_key)
-    print(f"[pymrsf] Using Anthropic provider: {MODEL_VERSION}")
-    print(f"[pymrsf] Note: Anthropic doesn't expose logprobs - novelty detection unavailable.")
-    print(f"[pymrsf]       Using relevance-only scoring for RAG.\n")
+    _logger.info("Using Anthropic provider: %s", MODEL_VERSION)
+    _logger.info("Anthropic does not expose logprobs — using relevance-only RAG scoring.")
 
     def tokenize(text: str) -> list:
         """Approximate tokenization using Claude's tokenizer or fallback."""
@@ -746,3 +750,21 @@ def _get_model_version() -> str:
 
 
 MODEL_VERSION = _get_model_version()
+
+
+def set_provider(name: str) -> None:
+    """Switch providers at runtime (experimental).
+
+    Resets cached model state and updates PYMRSF_PROVIDER env var.
+    Switching away from 'local' releases the GGUF model from memory on next use.
+    Switching to 'local' triggers a fresh model load on first use.
+
+    Args:
+        name: Provider name — "local", "openai", or "anthropic"
+    """
+    global PROVIDER, MODEL_VERSION, _lm, _lm_loaded
+    PROVIDER = name.lower()
+    _lm = None
+    _lm_loaded = False
+    os.environ["PYMRSF_PROVIDER"] = PROVIDER
+    MODEL_VERSION = _get_model_version()

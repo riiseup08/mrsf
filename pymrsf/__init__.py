@@ -21,6 +21,7 @@ The MRSF delta-compression storage system (mrsf_write, mrsf_read, etc.)
 is available under pymrsf.experimental as a research-grade backend.
 """
 
+import logging
 import os
 from dataclasses import dataclass, field
 
@@ -86,6 +87,29 @@ class Config:
 
 
 _config = Config()
+
+
+def configure_logging(level: str = "INFO") -> None:
+    """Configure the pymrsf logger.
+
+    Call this once at application startup to see library log output.
+    By default pymrsf ships with a NullHandler so it never pollutes stdout
+    unless the application explicitly enables logging.
+
+    Args:
+        level: Log level string — "DEBUG", "INFO", "WARNING", "ERROR".
+
+    Example:
+        import pymrsf
+        pymrsf.configure_logging("DEBUG")   # show all internal messages
+        pymrsf.configure_logging("WARNING") # only warnings and errors
+    """
+    pkg_logger = logging.getLogger("pymrsf")
+    if not pkg_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        pkg_logger.addHandler(handler)
+    pkg_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
 
 
 def configure(**kwargs) -> Config:
@@ -170,6 +194,7 @@ __all__ = [
     "Config",
     "configure",
     "get_config",
+    "configure_logging",
 
     # ── Experimental: MRSF storage backend ────────────────────────────────────
     "experimental",

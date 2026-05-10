@@ -19,9 +19,12 @@ FAISS Deletion Strategy:
   (e.g., every 100 writes or on a cron schedule).
 """
 
+import logging
 import sqlite3, msgpack, uuid, json, os
 import numpy as np
 import faiss
+
+_logger = logging.getLogger("pymrsf.experimental.storage")
 
 from ..core import tokenize, detokenize, compute_delta, ModelSession, MODEL_VERSION, provider_capabilities
 from ..embeddings import embed, get_embedding_dim
@@ -85,8 +88,7 @@ def _get_index():
             # Validate embedding dimension matches expected
             actual_dim = get_embedding_dim()
             if actual_dim != EMBED_DIM:
-                print(f"[WARN] Embedding dimension mismatch: expected={EMBED_DIM}, actual={actual_dim}")
-                print(f"       Using actual dimension: {actual_dim}")
+                _logger.warning("Embedding dimension mismatch: expected=%d, actual=%d — using actual.", EMBED_DIM, actual_dim)
                 dim = actual_dim
             else:
                 dim = EMBED_DIM
@@ -176,7 +178,7 @@ def mrsf_write(text: str, doc_id: str = None) -> dict:
     _maybe_rebuild()
 
     ratio = 1 - len(delta) / max(n - 1, 1)
-    print(f"[WRITE] {doc_id[:8]}... | tokens={n} | Δ={len(delta)} | compression={ratio:.1%}")
+    _logger.debug("WRITE %s... | tokens=%d | Δ=%d | compression=%.1f%%", doc_id[:8], n, len(delta), ratio * 100)
     return {"doc_id": doc_id, "token_count": n,
             "surprise_count": len(delta), "compression": ratio}
 
@@ -199,7 +201,7 @@ def mrsf_delete(doc_id: str) -> bool:
     conn.commit()
 
     if cur.rowcount == 0:
-        print(f"[DELETE] {doc_id[:8]}... not found or already deleted.")
+        _logger.warning("DELETE %s... not found or already deleted.", doc_id[:8])
         return False
 
     # Remove from active metadata; keep FAISS vector as tombstone
@@ -209,7 +211,7 @@ def mrsf_delete(doc_id: str) -> bool:
         index_meta[idx] = None  # Mark slot as deleted
         _tombstones.add(doc_id)
 
-    print(f"[DELETE] {doc_id[:8]}... | tombstoned in FAISS (will be reclaimed on rebuild)")
+    _logger.info("DELETE %s... | tombstoned in FAISS (will be reclaimed on rebuild)", doc_id[:8])
     return True
 
 
@@ -228,9 +230,7 @@ def mrsf_read(query: str, top_k: int = 1) -> list:
     """
     # Check if ModelSession reconstruction is available
     if not provider_capabilities().get("supports_delta", False):
-        print("[ERROR] mrsf_read requires the local provider for ModelSession reconstruction.")
-        print("  Install with: pip install pymrsf[local]")
-        print("  And set: PYMRSF_PROVIDER=local")
+        _logger.error("mrsf_read requires the local provider for ModelSession reconstruction. Install with: pip install pymrsf[local]")
         return []
     
     faiss_index, index_meta = _get_index()
@@ -263,7 +263,7 @@ def mrsf_read(query: str, top_k: int = 1) -> list:
 
         m_ver, delta_blob, token_count = row
         if m_ver != MODEL_VERSION:
-            print(f"[WARN] Version mismatch: stored={m_ver} | current={MODEL_VERSION}")
+            _logger.warning("Version mismatch: stored=%s | current=%s", m_ver, MODEL_VERSION)
 
         # Safely unpack msgpack
         delta_list = msgpack.unpackb(delta_blob, strict_map_key=False)
@@ -285,7 +285,7 @@ def mrsf_read(query: str, top_k: int = 1) -> list:
         # Exclude BOS token when detokenizing
         reconstructed = detokenize(out_ids[1:])
 
-        print(f"[READ]  rank={len(results)+1} | {doc_id[:8]}... | distance={D[0][rank_idx]:.4f}")
+        _logger.debug("READ  rank=%d | %s... | distance=%.4f", len(results) + 1, doc_id[:8], D[0][rank_idx])
         results.append(reconstructed)
 
         if len(results) >= top_k:
@@ -318,7 +318,7 @@ def save_index():
     active = sum(1 for m in index_meta if m is not None)
     tombstoned = len(index_meta) - active
     tombstone_note = f" ({tombstoned} tombstoned)" if tombstoned else ""
-    print(f"[INDEX] Saved → {FAISS_PATH} ({active} active{tombstone_note})")
+    _logger.info("INDEX saved → %s (%d active%s)", FAISS_PATH, active, tombstone_note)
 
 
 def load_index():
@@ -331,16 +331,15 @@ def load_index():
                 _index_meta = json.load(f)
             # Reset tombstone tracking (all loaded entries are live)
             _tombstones = set()
-            print(f"[INDEX] Loaded {_faiss_index.ntotal} documents from disk.")
+            _logger.info("INDEX loaded %d documents from disk.", _faiss_index.ntotal)
         except Exception as e:
-            print(f"[ERROR] Failed to load index: {e}")
-            print("        Starting with fresh index.")
+            _logger.error("Failed to load index: %s — starting with fresh index.", e)
             _faiss_index = None
             _index_meta = None
             _tombstones = set()
             _get_index()  # Initialize fresh
     else:
-        print("[INDEX] No existing index. Starting fresh.")
+        _logger.info("INDEX no existing index — starting fresh.")
 
 
 def reset_index_metadata():
@@ -360,10 +359,10 @@ def reset_index_metadata():
     rows = cur.execute("SELECT doc_id FROM documents WHERE deleted=0").fetchall()
     
     if not rows:
-        print("[RESET] No active documents in SQLite. Nothing to reset.")
+        _logger.info("RESET no active documents in SQLite — nothing to reset.")
         return
-    
-    print(f"[RESET] Resetting FAISS index metadata from {len(rows)} SQLite documents...")
+
+    _logger.info("RESET rebuilding index metadata from %d SQLite documents...", len(rows))
     
     # Get fresh index (empty)
     actual_dim = get_embedding_dim()
@@ -376,8 +375,7 @@ def reset_index_metadata():
         doc_id = row[0]
         _index_meta.append(doc_id)
     
-    print(f"[RESET] Complete. Index metadata has {len(_index_meta)} entries.")
-    print("        ⚠️  Embedding vectors not recovered. Re-add documents with mrsf_write().")
+    _logger.info("RESET complete — %d index metadata entries. Embedding vectors not recovered; re-add with mrsf_write().", len(_index_meta))
 
 
 def rebuild_index(verbose: bool = True):
@@ -402,11 +400,11 @@ def rebuild_index(verbose: bool = True):
 
     if not rows:
         if verbose:
-            print("[REBUILD] No active documents in SQLite. Nothing to rebuild.")
+            _logger.info("REBUILD no active documents — nothing to rebuild.")
         return {"documents_count": 0, "recovered": 0, "skipped": 0, "success": True}
 
     if verbose:
-        print(f"[REBUILD] Rebuilding FAISS index from {len(rows)} documents...")
+        _logger.info("REBUILD rebuilding FAISS index from %d documents...", len(rows))
 
     actual_dim = get_embedding_dim()
     _faiss_index = faiss.IndexHNSWFlat(actual_dim, 32)
@@ -424,19 +422,19 @@ def rebuild_index(verbose: bool = True):
                 recovered += 1
             except Exception as e:
                 if verbose:
-                    print(f"[REBUILD] {doc_id[:8]}... embed failed: {e} — skipping")
+                    _logger.warning("REBUILD %s... embed failed: %s — skipping", doc_id[:8], e)
                 skipped += 1
         else:
             if verbose:
-                print(f"[REBUILD] {doc_id[:8]}... no text stored — skipping (re-add with mrsf_write)")
+                _logger.warning("REBUILD %s... no text stored — skipping (re-add with mrsf_write)", doc_id[:8])
             skipped += 1
 
     _rebuild_counter = 0
 
     if verbose:
-        print(f"[REBUILD] Complete. Recovered={recovered}, Skipped={skipped}.")
+        _logger.info("REBUILD complete — recovered=%d, skipped=%d.", recovered, skipped)
         if skipped:
-            print("          Re-add skipped documents with mrsf_write() to restore search.")
+            _logger.warning("REBUILD %d documents skipped — re-add with mrsf_write() to restore search.", skipped)
 
     return {"documents_count": recovered, "recovered": recovered, "skipped": skipped, "success": True}
 
@@ -521,11 +519,11 @@ def close_connections():
         _conn.close()
         _conn = None
         _cur = None
-        print("[CLEANUP] SQLite connection closed.")
+        _logger.debug("CLEANUP SQLite connection closed.")
     
     # FAISS index doesn't need explicit cleanup, but we can reset references
     if _faiss_index is not None:
-        print(f"[CLEANUP] FAISS index released ({_faiss_index.ntotal} documents).")
+        _logger.debug("CLEANUP FAISS index released (%d documents).", _faiss_index.ntotal)
         _faiss_index = None
         _index_meta = None
         _tombstones = set()
