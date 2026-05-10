@@ -44,21 +44,27 @@ _cache_stats = {
 
 
 def configure_cache(
-    enabled: bool = True, 
-    max_size: int = 10000, 
+    enabled: bool = True,
+    max_size: int = 10000,
     ttl: int = 3600,
     embedding_max_size: int = 5000,
     embedding_ttl: int = 7200
 ):
-    """
-    Configure the RAG score cache.
+    """Configure the RAG score and embedding caches.
+
+    Both caches use LRU eviction and are thread-safe. Call this at application
+    startup before any scoring calls. By default both caches are enabled with
+    a 1-hour TTL for scores and 2-hour TTL for embeddings.
 
     Args:
-        enabled: Enable/disable caching
-        max_size: Maximum number of cached score entries
-        ttl: Time-to-live for scores in seconds (0 = no expiration)
-        embedding_max_size: Maximum number of cached embeddings
-        embedding_ttl: Time-to-live for embeddings in seconds (0 = no expiration)
+        enabled: Enable/disable both caches
+        max_size: Maximum score cache entries (default 10,000)
+        ttl: Score TTL in seconds (0 = no expiration)
+        embedding_max_size: Maximum embedding cache entries (default 5,000)
+        embedding_ttl: Embedding TTL in seconds (0 = no expiration)
+
+    Example:
+        >>> configure_cache(enabled=True, max_size=5000, ttl=1800)
     """
     global _CACHE_ENABLED, _CACHE_MAX_SIZE, _CACHE_TTL, _EMBEDDING_CACHE_MAX_SIZE, _EMBEDDING_CACHE_TTL
     _CACHE_ENABLED = enabled
@@ -177,12 +183,17 @@ def set_cached_score(
 
 
 def clear_cache(reset_stats: bool = False):
-    """
-    Clear all cached scores.
-    
+    """Clear all cached scores.
+
+    By default, statistics remain cumulative across clears. Pass
+    reset_stats=True to zero out the counters as well.
+
     Args:
-        reset_stats: If True, also reset cache statistics counters.
-                     By default, stats remain cumulative across clears.
+        reset_stats: If True, also reset cache statistics counters
+
+    Example:
+        >>> clear_cache()
+        >>> clear_cache(reset_stats=True)
     """
     with _cache_lock:
         _cache.clear()
@@ -193,11 +204,16 @@ def clear_cache(reset_stats: bool = False):
 
 
 def get_cache_stats() -> Dict[str, Any]:
-    """
-    Get cache statistics.
-    
+    """Get score cache statistics.
+
     Returns:
-        Dictionary with hits, misses, evictions, size, and hit_rate
+        Dictionary with keys: hits, misses, evictions, size, max_size,
+        hit_rate (percentage), enabled
+
+    Example:
+        >>> stats = get_cache_stats()
+        >>> stats["hit_rate"]
+        85.0
     """
     with _cache_lock:
         total = _cache_stats["hits"] + _cache_stats["misses"]
@@ -215,7 +231,16 @@ def get_cache_stats() -> Dict[str, Any]:
 
 
 def reset_cache_stats():
-    """Reset cache statistics counters to zero."""
+    """Reset score cache statistics counters to zero.
+
+    After calling this, hits, misses, and evictions all report 0
+    until the next cache operation.
+
+    Example:
+        >>> reset_cache_stats()
+        >>> get_cache_stats()["hits"]
+        0
+    """
     with _cache_lock:
         _cache_stats["hits"] = 0
         _cache_stats["misses"] = 0
@@ -311,12 +336,16 @@ def set_cached_embedding(text: str, embedding):
 
 
 def clear_embedding_cache(reset_stats: bool = False):
-    """
-    Clear the embedding cache.
-    
+    """Clear all cached embeddings.
+
+    By default, statistics remain cumulative across clears. Pass
+    reset_stats=True to zero out the counters as well.
+
     Args:
-        reset_stats: If True, also reset embedding cache statistics.
-                     By default, stats remain cumulative.
+        reset_stats: If True, also reset embedding cache statistics
+
+    Example:
+        >>> clear_embedding_cache()
     """
     with _embedding_lock:
         _embedding_cache.clear()
@@ -328,11 +357,16 @@ def clear_embedding_cache(reset_stats: bool = False):
 
 
 def get_embedding_cache_stats() -> Dict[str, Any]:
-    """
-    Get embedding cache statistics.
-    
+    """Get embedding cache statistics.
+
     Returns:
-        Dictionary with hits, misses, clears, size, and hit_rate
+        Dictionary with keys: hits, misses, evictions, clears (backward compat
+        alias for evictions), size, max_size, hit_rate (percentage), enabled
+
+    Example:
+        >>> stats = get_embedding_cache_stats()
+        >>> stats["size"]
+        42
     """
     with _embedding_lock:
         total = _embedding_stats["hits"] + _embedding_stats["misses"]

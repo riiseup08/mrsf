@@ -507,62 +507,83 @@ def _get_backend():
 # ── Public API (lazy-loaded proxies) ───────────────────────────────────────────
 
 def tokenize(text: str) -> list:
-    """
-    Convert text to token IDs.
-    
-    Multi-provider: Available with all providers.
-    - Local: Uses llama-cpp-python tokenizer (exact)
-    - OpenAI/Anthropic: Uses tiktoken approximation
-    
+    """Convert text to token IDs.
+
+    Available with all providers. Local provider uses the exact model tokenizer;
+    OpenAI and Anthropic providers use tiktoken as an approximation.
+
+    Args:
+        text: Text to tokenize
+
     Returns:
         List of token IDs
+
+    Example:
+        >>> tokenize("Hello world")
+        [1, 22557, 1526]
     """
     return _get_backend()["tokenize"](text)
 
 
 def detokenize(ids: list) -> str:
-    """
-    Convert token IDs back to text.
-    
-    Multi-provider: Available with all providers.
-    - Local: Uses llama-cpp-python detokenizer (exact)
-    - OpenAI/Anthropic: Uses tiktoken approximation
-    
+    """Convert token IDs back to text.
+
+    Available with all providers. Local provider uses the exact model detokenizer;
+    OpenAI and Anthropic providers use tiktoken as an approximation.
+
+    Args:
+        ids: List of token IDs to decode
+
     Returns:
         Decoded text string
+
+    Example:
+        >>> detokenize([22557, 1526])
+        'Hello world'
     """
     return _get_backend()["detokenize"](ids)
 
 
 def quantized_argmax(raw_logits) -> int:
-    """
-    Get the argmax of logits with quantization.
-    
-    Local-only: Requires direct access to raw logits.
-    
+    """Get the token ID with the highest quantized logit value.
+
+    Local-only: requires direct access to raw logits. The quantization precision
+    is controlled by PYMRSF_LOGIT_PRECISION (default 6 decimal places).
+
     Args:
         raw_logits: Raw logit array from model
-        
+
     Returns:
-        Token ID with highest logit value
-        
+        Token ID with highest logit value after quantization
+
     Raises:
         NotImplementedError: If called with non-local provider
+
+    Example:
+        >>> quantized_argmax(np.array([0.1, 0.9, 0.3]))
+        1
     """
     return _get_backend()["quantized_argmax"](raw_logits)
 
 
 def get_surprises(text: str) -> tuple:
-    """
-    Get token-level surprise information.
-    
+    """Get token-level surprise information.
+
     Provider support varies:
     - Local: Full token-level exact surprises via argmax
     - OpenAI: Limited threshold-based surprises via API logprobs
     - Anthropic: Not supported (no logprobs available)
-    
+
+    Args:
+        text: Text to analyze for surprise tokens
+
     Returns:
         (surprises, heatmap, token_count) tuple
+
+    Example:
+        >>> surprises, heatmap, n = get_surprises("The Eiffel Tower is tall.")
+        >>> len(surprises)
+        0
     """
     return _get_backend()["get_surprises"](text)
 
@@ -586,20 +607,23 @@ def compute_delta(text_or_ids) -> list:
 
 
 def next_token_greedy(context_ids: list) -> int:
-    """
-    Predict next token greedily (legacy O(n²) version).
-    
-    Local-only: Requires direct model access.
-    Use ModelSession instead for O(n) performance.
-    
+    """Predict the next token using greedy decoding (legacy O(n²)).
+
+    Local-only: requires direct model access. For O(n) performance use
+    ModelSession instead — this function resets the model for every call.
+
     Args:
-        context_ids: List of token IDs for context
-        
+        context_ids: List of token IDs forming the context
+
     Returns:
         Predicted next token ID
-        
+
     Raises:
         NotImplementedError: If called with non-local provider
+
+    Example:
+        >>> next_token_greedy([1, 22557])
+        1526
     """
     return _get_backend()["next_token_greedy"](context_ids)
 
@@ -703,9 +727,20 @@ def provider_capabilities() -> dict:
 
 
 def get_backend():
-    """
-    Public accessor for the backend dictionary.
-    Returns the loaded backend with all provider-specific functions.
+    """Get the current provider backend dictionary.
+
+    Returns a dict of provider-specific functions (tokenize, detokenize,
+    quantized_argmax, etc.) and the raw lm object. The backend is loaded
+    lazily on first call and cached thereafter.
+
+    Returns:
+        dict with keys: tokenize, detokenize, quantized_argmax, get_surprises,
+        compute_delta, ModelSession, next_token_greedy, lm
+
+    Example:
+        >>> backend = get_backend()
+        >>> backend.keys()
+        dict_keys(['tokenize', 'detokenize', ...])
     """
     return _get_backend()
 
@@ -753,14 +788,17 @@ MODEL_VERSION = _get_model_version()
 
 
 def set_provider(name: str) -> None:
-    """Switch providers at runtime (experimental).
+    """Switch providers at runtime.
 
-    Resets cached model state and updates PYMRSF_PROVIDER env var.
+    Resets the cached model state and updates the PYMRSF_PROVIDER env var.
     Switching away from 'local' releases the GGUF model from memory on next use.
     Switching to 'local' triggers a fresh model load on first use.
 
     Args:
         name: Provider name — "local", "openai", or "anthropic"
+
+    Example:
+        >>> set_provider("openai")
     """
     global PROVIDER, MODEL_VERSION, _lm, _lm_loaded
     PROVIDER = name.lower()

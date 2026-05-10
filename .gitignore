@@ -59,3 +59,6 @@ VERIFICATION_REPORT.md
 TEST_RESULTS.md
 mrsf_benchmark.log
 mrsf_results_full.csv
+
+# MkDocs build output
+site/

@@ -679,7 +679,18 @@ def score_chunks_batch(
 
 
 def explain_chunk(chunk: str, query: str = None, weights: dict = None) -> None:
-    """Print a detailed explanation of why a chunk scores the way it does."""
+    """Print a detailed explanation of why a chunk scores the way it does.
+
+    Delegates to score_chunk with verbose=True for the human-readable report.
+
+    Args:
+        chunk: Text chunk to explain
+        query: Query to score against (optional)
+        weights: Scoring weights override (optional)
+
+    Example:
+        >>> explain_chunk("Backpropagation uses the chain rule.", query="How does backprop work?")
+    """
     score_chunk(chunk, query=query, verbose=True, weights=weights)
 
 

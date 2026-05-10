@@ -322,7 +322,16 @@ def save_index():
 
 
 def load_index():
-    """Load a previously saved FAISS index from disk."""
+    """Load a previously saved FAISS index from disk.
+
+    Reads the FAISS index file and metadata from the paths configured via
+    PYMRSF_FAISS_PATH (default: mrsf.faiss) and its .meta companion file.
+    If no saved index exists, initializes a fresh empty index.
+
+    Example:
+        >>> load_index()
+    """
+    global _faiss_index, _index_meta, _tombstones
     global _faiss_index, _index_meta, _tombstones
     if os.path.exists(FAISS_PATH):
         try:
@@ -512,7 +521,16 @@ def mrsf_read_novel(
 
 
 def close_connections():
-    """Close database and cleanup connections for long-running processes."""
+    """Close SQLite connection and reset FAISS index state.
+
+    Use this in long-running processes to cleanly release database handles
+    and free memory. After calling this, the next mrsf_write or mrsf_read
+    call will re-initialize connections lazily.
+
+    Example:
+        >>> close_connections()
+    """
+    global _conn, _cur, _faiss_index, _index_meta, _tombstones
     global _conn, _cur, _faiss_index, _index_meta, _tombstones
     
     if _conn is not None:
