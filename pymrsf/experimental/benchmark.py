@@ -2,21 +2,32 @@
 pymrsf.benchmark — Compression and latency benchmarks for local model.
 """
 
-import os, time
+import os
+import time
+
 import numpy as np
-from ..core import tokenize, quantized_argmax, get_backend, get_raw_lm, LOGIT_PRECISION, MODEL_VERSION, provider_capabilities
-from .storage import mrsf_write, mrsf_read, save_index
+
+from ..core import (
+    LOGIT_PRECISION,
+    MODEL_VERSION,
+    get_backend,
+    get_raw_lm,
+    provider_capabilities,
+    quantized_argmax,
+    tokenize,
+)
 from ..embeddings import embed
+from .storage import mrsf_read, mrsf_write, save_index
 
 
 def mrsf_benchmark_canterbury(folder_path: str, max_chars: int = 2000, return_summary: bool = False):
     """Benchmark compression on Canterbury Corpus.
-    
+
     Args:
         folder_path: Path to Canterbury corpus files
         max_chars: Maximum characters to process per file
         return_summary: If True, return structured dict instead of just printing
-    
+
     Returns:
         list of dicts if return_summary=True, empty list otherwise
     """
@@ -35,14 +46,14 @@ def mrsf_benchmark_canterbury(folder_path: str, max_chars: int = 2000, return_su
         print("  Install with: pip install pymrsf[local]")
         print("  And set: PYMRSF_PROVIDER=local")
         return []
-    
+
     backend = get_backend()
     lm_obj  = backend.get("lm") or get_raw_lm()
-    
+
     # Get actual model info from backend
     caps = provider_capabilities()
     provider = caps.get("provider", "unknown")
-    
+
     results = []
     print(f"\n{'═'*80}")
     print(f"CANTERBURY CORPUS BENCHMARK  ({provider}: {MODEL_VERSION} | precision={LOGIT_PRECISION})")
@@ -55,7 +66,7 @@ def mrsf_benchmark_canterbury(folder_path: str, max_chars: int = 2000, return_su
         text = None
         for enc in ["utf-8", "latin-1", "cp1252"]:
             try:
-                with open(path, "r", encoding=enc) as f:
+                with open(path, encoding=enc) as f:
                     raw = f.read()
                 printable = sum(1 for c in raw[:500] if c.isprintable() or c in "\n\r\t")
                 if printable / max(len(raw[:500]), 1) > 0.85:
@@ -105,10 +116,10 @@ def mrsf_benchmark_canterbury(folder_path: str, max_chars: int = 2000, return_su
 
 def mrsf_latency_benchmark(return_summary: bool = False):
     """Benchmark write/read/embed latency.
-    
+
     Args:
         return_summary: If True, return structured dict instead of just printing
-    
+
     Returns:
         list of dicts if return_summary=True, empty list otherwise
     """
@@ -123,9 +134,9 @@ def mrsf_latency_benchmark(return_summary: bool = False):
          "def quicksort(arr): return arr if len(arr)<=1 else quicksort([x for x in "
          "arr[1:] if x<=arr[0]])+[arr[0]]+quicksort([x for x in arr[1:] if x>arr[0]])"),
     ]
-    
+
     # Get actual model info
-    backend = get_backend()
+    get_backend()
     caps = provider_capabilities()
     provider = caps.get("provider", "unknown")
 
@@ -147,7 +158,7 @@ def mrsf_latency_benchmark(return_summary: bool = False):
         t0      = time.time()
         embed(text)
         embed_t = (time.time() - t0) * 1000
-        
+
         results.append({
             "label": label,
             "tokens": result["token_count"],
@@ -155,13 +166,13 @@ def mrsf_latency_benchmark(return_summary: bool = False):
             "read_time": read_t,
             "embed_time_ms": embed_t,
         })
-        
+
         print(f"{label:<22} {result['token_count']:>7} {write_t:>9.2f} "
               f"{read_t:>9.2f} {embed_t:>10.1f}")
 
     print(f"{'─'*75}")
-    print(f"Note: Read path involves full O(n) model inference for reconstruction.")
+    print("Note: Read path involves full O(n) model inference for reconstruction.")
     print(f"{'─'*75}\n")
     save_index()
-    
+
     return results if return_summary else []

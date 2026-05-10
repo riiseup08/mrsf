@@ -36,14 +36,15 @@ Caching:
 
 import asyncio
 import logging
+
 import numpy as np
 
 _logger = logging.getLogger("pymrsf.rag")
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
-from .embeddings import embed
-from .core import ModelSession, provider_capabilities, PROVIDER, MODEL_VERSION
+
 from . import cache
+from .core import MODEL_VERSION, PROVIDER, ModelSession, provider_capabilities
+from .embeddings import embed
 
 # Conditional import for probe (only available with certain providers)
 _probe_available = provider_capabilities().get("supports_probe", False)
@@ -262,9 +263,9 @@ def score_chunk(
             if verbose:
                 _print_chunk_report(cached_result, query, w_effective)
             return cached_result
-    
+
     scoring_mode = "full" if probe_available else "relevance_only"
-    
+
     # Step 1 — probe the chunk (or fallback to relevance-only mode)
     if probe_available and probe is not None:
         r_chunk = probe(chunk)
@@ -305,7 +306,7 @@ def score_chunk(
             incremental_novelty = novelty_score
         except Exception:
             pass  # If session feeding fails, fall back to overall novelty
-    
+
     # ── Fix 4: Per-chunk conditional novelty (query+chunk vs query alone) ──────
     # Instead of probing the query string alone, probe query+chunk together
     # and compare to probe(query) alone. The delta is true conditional novelty:
@@ -318,7 +319,7 @@ def score_chunk(
             r_q = probe(query)
             if "error" not in r_q:
                 query_knowledge_score = r_q["knowledge_score"]
-        
+
         # Probe query + chunk together — this measures knowledge of the pair
         if query_knowledge_score is not None:
             combined_text = query + "\n" + chunk
@@ -330,7 +331,7 @@ def score_chunk(
                 # If combined knowledge >= query knowledge, the chunk is already known.
                 raw_conditional = query_knowledge_score - combined_knowledge
                 conditional_novelty = max(0, min(100, raw_conditional))
-    
+
     # ── Fix 2: Query ignorance as a gate, not a blended score ──────────────────
     query_ignorance = 100 - (query_knowledge_score or 0) if query_knowledge_score is not None else 0
     if query is not None and query_ignorance < 20:
@@ -565,14 +566,14 @@ def score_chunks_batch(
 
     # Validate and normalize weights
     w, weights_valid = _validate_and_normalize_weights(weights)
-    
+
     total = len(chunks)
 
     print(f"\n[pymrsf.rag] Batch scoring {total} chunks...")
 
     # Check if probing is available
     probe_available = probe is not None
-    
+
     # Batch probe all chunks (this still runs sequentially, but avoids probe overhead)
     chunk_results = []
     if probe_available:
@@ -612,7 +613,7 @@ def score_chunks_batch(
             # Mark embedding failures explicitly instead of using zero vectors
             chunk_embeddings.append(None)
 
-    print(f"  computing scores...           \r")
+    print("  computing scores...           \r")
 
     results = []
     query_ignorance = 100 - (query_knowledge or 0) if query_knowledge is not None else 0
@@ -674,7 +675,7 @@ def score_chunks_batch(
     for rank, r in enumerate(results):
         r["rank"] = rank + 1
 
-    print(f"[pymrsf.rag] Batch done.        ")
+    print("[pymrsf.rag] Batch done.        ")
     return results
 
 
@@ -706,7 +707,7 @@ def _print_chunk_report(result: dict, query: str = None, weights: dict = None) -
         return "█" * filled + "░" * (bar_len - filled)
 
     print(f"\n{'═' * 65}")
-    print(f"  PYMRSF RAG CHUNK SCORER")
+    print("  PYMRSF RAG CHUNK SCORER")
     print(f"{'═' * 65}")
     print(f"  Chunk   : {result['chunk_preview']}")
     if query:
@@ -775,12 +776,13 @@ def filter_chunks(
 
     if verbose:
         print(f"\n{'═' * 65}")
-        print(f"  PYMRSF CHUNK FILTER")
+        print("  PYMRSF CHUNK FILTER")
         print(f"{'═' * 65}")
         print(f"  Query        : {query[:60]}")
         print(f"  Input chunks : {len(chunks)}")
         print(f"  Min score    : {min_rag_score}/100")
-        print(f"  Diversity    : {'on (>{:.0f}% similar = dedup)'.format(diversity_threshold*100) if diversity_threshold < 1.0 else 'off'}")
+        label = f"on (>{diversity_threshold * 100:.0f}% similar = dedup)" if diversity_threshold < 1.0 else "off"
+        print(f"  Diversity    : {label}")
         print(f"  Passed       : {len(passed)}")
         print(f"  Dropped      : {dropped}")
         if top_k:
@@ -965,7 +967,7 @@ async def score_chunk_async(
 
 
 async def score_chunks_async(
-    chunks: List[str],
+    chunks: list[str],
     query: str = None,
     verbose: bool = False,
     weights: dict = None,
@@ -974,7 +976,7 @@ async def score_chunks_async(
     incremental: bool = False,
     relevance_cutoff: float = None,
     thresholds: list = None,
-) -> List[dict]:
+) -> list[dict]:
     """
     Async version that scores multiple chunks concurrently.
 
@@ -1043,7 +1045,7 @@ async def score_chunks_async(
 
         tasks = [score_with_limit(i, chunk) for i, chunk in enumerate(chunks)]
         results_list = list(await asyncio.gather(*tasks))
-    
+
     # Diversity dedup — collect embeddings from cache (already populated during scoring)
     chunk_embeddings_async: list = []
     if diversity_threshold and diversity_threshold < 1.0:
@@ -1065,12 +1067,12 @@ async def score_chunks_async(
     for rank, r in enumerate(results_list):
         r["rank"] = rank + 1
 
-    print(f"[pymrsf.rag] Async scoring done.")
+    print("[pymrsf.rag] Async scoring done.")
     return results_list
 
 
 async def filter_chunks_async(
-    chunks: List[str],
+    chunks: list[str],
     query: str,
     min_rag_score: int = 50,
     top_k: int = None,
@@ -1080,13 +1082,13 @@ async def filter_chunks_async(
     max_concurrent: int = 10,
     relevance_cutoff: float = None,
     thresholds: list = None,
-) -> List[str]:
+) -> list[str]:
     """
     Async version of filter_chunks - non-blocking RAG pipeline filter.
-    
+
     This is ideal for production RAG systems where scoring latency matters.
     Scores chunks concurrently and returns only useful ones.
-    
+
     Args:
         chunks: List of text strings (your retrieved chunks)
         query: The user query
@@ -1096,10 +1098,10 @@ async def filter_chunks_async(
         weights: Custom scoring weights
         diversity_threshold: Cosine dedup threshold
         max_concurrent: Maximum concurrent scoring tasks
-    
+
     Returns:
         List of chunk strings that passed the filter, ranked best first
-    
+
     Example:
         import asyncio
         useful = await filter_chunks_async(chunks, query="...", min_rag_score=50)
@@ -1113,21 +1115,22 @@ async def filter_chunks_async(
         relevance_cutoff=relevance_cutoff,
         thresholds=thresholds,
     )
-    
+
     passed = [r for r in scored if r["rag_score"] >= min_rag_score]
     dropped = len(scored) - len(passed)
-    
+
     if top_k:
         passed = passed[:top_k]
-    
+
     if verbose:
         print(f"\n{'═' * 65}")
-        print(f"  PYMRSF CHUNK FILTER (ASYNC)")
+        print("  PYMRSF CHUNK FILTER (ASYNC)")
         print(f"{'═' * 65}")
         print(f"  Query        : {query[:60]}")
         print(f"  Input chunks : {len(chunks)}")
         print(f"  Min score    : {min_rag_score}/100")
-        print(f"  Diversity    : {'on (>{:.0f}% similar = dedup)'.format(diversity_threshold*100) if diversity_threshold < 1.0 else 'off'}")
+        label = f"on (>{diversity_threshold * 100:.0f}% similar = dedup)" if diversity_threshold < 1.0 else "off"
+        print(f"  Diversity    : {label}")
         print(f"  Passed       : {len(passed)}")
         print(f"  Dropped      : {dropped}")
         if top_k:
@@ -1143,5 +1146,5 @@ async def filter_chunks_async(
             if len(dropped_list) > 5:
                 print(f"  ... and {len(dropped_list) - 5} more dropped")
         print(f"{'═' * 65}\n")
-    
+
     return [r["chunk"] for r in passed]

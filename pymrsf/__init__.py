@@ -25,14 +25,25 @@ import logging
 import os
 from dataclasses import dataclass, field
 
+from . import experimental
+
 # Experimental research backend — re-exported at top level for backward compat
 from .experimental import (
-    mrsf_write, mrsf_read, mrsf_read_novel, mrsf_delete, rebuild_index,
-    save_index, load_index, reset_index_metadata, close_connections,
-    mrsf_inspect, mrsf_rebuild_explained,
-    mrsf_benchmark_canterbury, mrsf_latency_benchmark,
+    close_connections,
+    load_index,
+    mrsf_benchmark_canterbury,
+    mrsf_delete,
+    mrsf_inspect,
+    mrsf_latency_benchmark,
+    mrsf_read,
+    mrsf_read_novel,
+    mrsf_rebuild_explained,
+    mrsf_write,
+    rebuild_index,
+    reset_index_metadata,
+    save_index,
 )
-from . import experimental
+
 
 def rebuild_faiss_from_sqlite(*args, **kwargs):
     """Deprecated alias for reset_index_metadata(). Removed in v0.6."""
@@ -44,26 +55,48 @@ def rebuild_faiss_from_sqlite(*args, **kwargs):
         stacklevel=2,
     )
     return reset_index_metadata(*args, **kwargs)
-from .embeddings import embed, get_embedding_dim
-from .probe import probe, probe_compare
-from .rag import (
-    score_chunk, score_chunks, score_chunks_batch,
-    explain_chunk, filter_chunks, smart_filter, DEFAULT_WEIGHTS,
-    score_chunk_async, score_chunks_async, filter_chunks_async,
-    DEFAULT_RELEVANCE_CUTOFF, DEFAULT_RAG_THRESHOLDS,
-    WeightConfig,
+from . import cache
+from .cache import (
+    clear_cache,
+    clear_embedding_cache,
+    configure_cache,
+    get_cache_stats,
+    get_embedding_cache_stats,
+    reset_cache_stats,
 )
 from .chunker import smart_chunk
 from .core import (
-    ModelSession, compute_delta, get_surprises, tokenize, detokenize,
-    quantized_argmax, next_token_greedy,
-    get_backend, get_raw_lm, provider_capabilities, set_provider,
-    PROVIDER, MODEL_VERSION, LOGIT_PRECISION,
+    LOGIT_PRECISION,
+    MODEL_VERSION,
+    PROVIDER,
+    ModelSession,
+    compute_delta,
+    detokenize,
+    get_backend,
+    get_raw_lm,
+    get_surprises,
+    next_token_greedy,
+    provider_capabilities,
+    quantized_argmax,
+    set_provider,
+    tokenize,
 )
-from . import cache
-from .cache import (
-    configure_cache, get_cache_stats, get_embedding_cache_stats,
-    reset_cache_stats, clear_cache, clear_embedding_cache
+from .embeddings import embed, get_embedding_dim
+from .probe import probe, probe_compare
+from .rag import (
+    DEFAULT_RAG_THRESHOLDS,
+    DEFAULT_RELEVANCE_CUTOFF,
+    DEFAULT_WEIGHTS,
+    WeightConfig,
+    explain_chunk,
+    filter_chunks,
+    filter_chunks_async,
+    score_chunk,
+    score_chunk_async,
+    score_chunks,
+    score_chunks_async,
+    score_chunks_batch,
+    smart_filter,
 )
 
 __version__ = "0.5.0"
@@ -86,7 +119,9 @@ class Config:
         model_path, n_ctx, n_gpu_layers, logit_precision
     """
     provider: str = field(default_factory=lambda: os.getenv("PYMRSF_PROVIDER", "local"))
-    model_path: str = field(default_factory=lambda: os.getenv("PYMRSF_MODEL_PATH", "./models/mistral-7b-v0.1.Q4_K_M.gguf"))
+    model_path: str = field(
+        default_factory=lambda: os.getenv("PYMRSF_MODEL_PATH", "./models/mistral-7b-v0.1.Q4_K_M.gguf")
+    )
     n_ctx: int = field(default_factory=lambda: int(os.getenv("PYMRSF_N_CTX", "4096")))
     n_gpu_layers: int = field(default_factory=lambda: int(os.getenv("PYMRSF_N_GPU_LAYERS", "0")))
     ollama_base: str = field(default_factory=lambda: os.getenv("PYMRSF_OLLAMA_BASE", "http://localhost:11434"))

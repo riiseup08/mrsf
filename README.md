@@ -1,7 +1,8 @@
 # pymrsf — Model-Relative Semantic Filtering
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/riiseup08/mrsf/actions/workflows/ci.yml/badge.svg)](https://github.com/riiseup08/mrsf/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-84%20passing-brightgreen)]()
 
 **Score RAG chunks by information gain — not just relevance.**

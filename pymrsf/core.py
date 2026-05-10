@@ -52,6 +52,7 @@ Note: Advanced features (knowledge probing, compression) require local provider.
 
 import logging
 import os
+
 from dotenv import load_dotenv
 
 _logger = logging.getLogger("pymrsf.core")
@@ -76,7 +77,7 @@ def _ensure_model():
         return
     if PROVIDER == "local":
         try:
-            import numpy as np
+            import numpy as np  # noqa: F401  — availability check
             from llama_cpp import Llama
         except ImportError:
             raise ImportError(
@@ -253,7 +254,7 @@ def _load_openai_backend():
 
     MODEL_VERSION = os.getenv("PYMRSF_MODEL_VERSION", "gpt-3.5-turbo")
     api_key = os.getenv("OPENAI_API_KEY")
-    
+
     if not api_key:
         raise ValueError(
             "\n[pymrsf] OpenAI provider requires OPENAI_API_KEY environment variable.\n"
@@ -261,7 +262,7 @@ def _load_openai_backend():
             "    export OPENAI_API_KEY='sk-...'\n"
             "  Or use the local provider: Set PYMRSF_PROVIDER=local\n"
         )
-    
+
     _client = OpenAI(api_key=api_key)
     _logger.info("Using OpenAI provider: %s", MODEL_VERSION)
     _logger.info("Note: Advanced features (knowledge probing) require local provider.")
@@ -293,7 +294,6 @@ def _load_openai_backend():
             "  And set: PYMRSF_PROVIDER=local\n"
         )
 
-    quantized_argmax = _quantized_argmax
 
     def get_surprises(text: str) -> tuple:
         import math
@@ -364,7 +364,7 @@ def _load_openai_backend():
 
 def _load_anthropic_backend():
     """Dynamically load the Anthropic backend functions.
-    
+
     Note: Anthropic API does not expose token logprobs, so novelty detection
     is limited. This provider is best used for embeddings and basic RAG scoring
     without novelty-based filtering.
@@ -380,7 +380,7 @@ def _load_anthropic_backend():
 
     MODEL_VERSION = os.getenv("PYMRSF_MODEL_VERSION", "claude-3-5-sonnet-20241022")
     api_key = os.getenv("ANTHROPIC_API_KEY")
-    
+
     if not api_key:
         raise ValueError(
             "\n[pymrsf] Anthropic provider requires ANTHROPIC_API_KEY environment variable.\n"
@@ -388,7 +388,7 @@ def _load_anthropic_backend():
             "    export ANTHROPIC_API_KEY='sk-ant-...'\n"
             "  Or use the local provider: Set PYMRSF_PROVIDER=local\n"
         )
-    
+
     _client = Anthropic(api_key=api_key)
     _logger.info("Using Anthropic provider: %s", MODEL_VERSION)
     _logger.info("Anthropic does not expose logprobs — using relevance-only RAG scoring.")
@@ -430,7 +430,7 @@ def _load_anthropic_backend():
         n = len(tokens)
         surprises = []
         heatmap = []
-        
+
         # Since we can't determine surprises, mark all as not surprised
         for i, tok_id in enumerate(tokens):
             tok_str = str(tok_id)  # Approximate
@@ -441,7 +441,7 @@ def _load_anthropic_backend():
                 "logprob": None,
                 "prob": None,
             })
-        
+
         return surprises, heatmap, n
 
     def compute_delta(text_or_ids) -> list:
@@ -591,15 +591,15 @@ def get_surprises(text: str) -> tuple:
 def compute_delta(text_or_ids) -> list:
     """
     Compute delta (surprise positions and token IDs) for compression.
-    
+
     Local-only: Requires exact token prediction via argmax.
-    
+
     Args:
         text_or_ids: Either a string or list of token IDs
-        
+
     Returns:
         List of (position, token_id) tuples for surprise tokens
-        
+
     Raises:
         NotImplementedError: If called with non-local provider
     """
@@ -631,18 +631,18 @@ def next_token_greedy(context_ids: list) -> int:
 class ModelSession:
     """
     Stateful session for incremental token generation.
-    
+
     Local-only: Requires KV cache access.
-    
+
     Maintains model state for O(n) reconstruction instead of O(n²).
     Feed tokens one by one; predict next token from current state.
-    
+
     Example:
         >>> session = ModelSession()
         >>> session.reset()
         >>> session.feed(token_id)
         >>> next_tok = session.predict_next()
-    
+
     Raises:
         NotImplementedError: If instantiated with non-local provider
     """
@@ -670,9 +670,9 @@ lm = None  # not safe to expose directly anymore; use get_raw_lm() instead
 def provider_capabilities() -> dict:
     """
     Returns a dictionary describing what features are available with the current provider.
-    
+
     Use this to check feature availability at runtime before calling provider-specific functions.
-    
+
     Returns:
         {
             "provider": str,              # "local", "openai", or "anthropic"
@@ -684,7 +684,7 @@ def provider_capabilities() -> dict:
             "supports_embeddings": bool,  # Semantic embeddings
             "supports_tokenization": bool,  # Tokenization (may be approximate)
         }
-    
+
     Example:
         >>> caps = provider_capabilities()
         >>> if caps["supports_probe"]:
@@ -697,7 +697,7 @@ def provider_capabilities() -> dict:
         "supports_tokenization": True,  # All providers (may be approximate)
         "supports_embeddings": True,    # All providers support embeddings
     }
-    
+
     if PROVIDER == "local":
         capabilities.update({
             "supports_logits": True,
@@ -722,7 +722,7 @@ def provider_capabilities() -> dict:
             "supports_sessions": False,
             "supports_true_surprises": False,
         })
-    
+
     return capabilities
 
 
@@ -749,16 +749,16 @@ def get_raw_lm():
     """
     Get direct access to the underlying language model object.
     Only available with local provider.
-    
+
     Returns:
         The llama_cpp.Llama object for local provider, or None for API providers.
-        
+
     Raises:
         NotImplementedError if called with a provider that doesn't support raw access.
     """
     backend = _get_backend()
     lm_obj = backend.get("lm")
-    
+
     if lm_obj is None and PROVIDER != "local":
         raise NotImplementedError(
             f"\n[pymrsf] Raw model access not available with {PROVIDER} provider.\n"
@@ -766,7 +766,7 @@ def get_raw_lm():
             f"  Install with: pip install pymrsf[local]\n"
             f"  And set: PYMRSF_PROVIDER=local\n"
         )
-    
+
     return lm_obj
 
 

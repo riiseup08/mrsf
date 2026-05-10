@@ -21,8 +21,8 @@ Falls back to sentence-based splitting for API providers.
 
 import logging
 import re
-from typing import Optional
-from .core import provider_capabilities, get_surprises, tokenize, detokenize
+
+from .core import detokenize, get_surprises, provider_capabilities, tokenize
 
 _logger = logging.getLogger("pymrsf.chunker")
 
@@ -131,7 +131,7 @@ def smart_chunk(
 
     # Build cumulative char offsets in O(n) by detokenizing one token at a time.
     # boundary_positions are sorted ascending, so we walk token_ids once.
-    boundary_set = set(boundary_positions)
+    set(boundary_positions)
     cum_len = 0
     cum_chars: list[int] = [0]  # cum_chars[i] = char offset just before token i
     for tid in token_ids:

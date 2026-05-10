@@ -15,13 +15,12 @@ Threading model:
     on potentially large result objects.
 """
 
-import hashlib
-import time
 import copy
-from collections import OrderedDict
-from typing import Optional, Dict, Any
+import hashlib
 import threading
-
+import time
+from collections import OrderedDict
+from typing import Any
 
 # ── Cache configuration ────────────────────────────────────────────────────────
 
@@ -75,22 +74,22 @@ def configure_cache(
 
 
 def _make_cache_key(
-    chunk: str, 
-    query: Optional[str], 
-    weights: Optional[dict],
-    provider: Optional[str] = None,
-    model_version: Optional[str] = None
+    chunk: str,
+    query: str | None,
+    weights: dict | None,
+    provider: str | None = None,
+    model_version: str | None = None
 ) -> str:
     """
     Generate a deterministic cache key from chunk, query, weights, provider, and model.
-    
+
     Args:
         chunk: The text chunk
         query: The query (optional)
         weights: Scoring weights (optional)
         provider: Provider name (optional, for cross-provider differentiation)
         model_version: Model version (optional, for cross-model differentiation)
-    
+
     Returns:
         SHA256 hash as cache key
     """
@@ -99,36 +98,36 @@ def _make_cache_key(
         weights_str = str(sorted(weights.items()))
     else:
         weights_str = ""
-    
+
     cache_input = f"{chunk}|{query or ''}|{weights_str}|{provider or ''}|{model_version or ''}"
     return hashlib.sha256(cache_input.encode()).hexdigest()
 
 
 def get_cached_score(
-    chunk: str, 
-    query: Optional[str] = None, 
-    weights: Optional[dict] = None,
-    provider: Optional[str] = None,
-    model_version: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
+    chunk: str,
+    query: str | None = None,
+    weights: dict | None = None,
+    provider: str | None = None,
+    model_version: str | None = None
+) -> dict[str, Any] | None:
     """
     Retrieve a cached score if available and not expired.
-    
+
     Args:
         chunk: The text chunk
         query: The query (optional)
         weights: Scoring weights (optional)
         provider: Provider name (optional)
         model_version: Model version (optional)
-    
+
     Returns:
         Deep-copied cached result dict or None if not found/expired
     """
     if not _CACHE_ENABLED:
         return None
-    
+
     key = _make_cache_key(chunk, query, weights, provider, model_version)
-    
+
     cached_result = None
     with _cache_lock:
         if key in _cache:
@@ -149,16 +148,16 @@ def get_cached_score(
 
 
 def set_cached_score(
-    chunk: str, 
-    query: Optional[str], 
-    weights: Optional[dict], 
-    result: Dict[str, Any],
-    provider: Optional[str] = None,
-    model_version: Optional[str] = None
+    chunk: str,
+    query: str | None,
+    weights: dict | None,
+    result: dict[str, Any],
+    provider: str | None = None,
+    model_version: str | None = None
 ):
     """
     Store a score result in the cache.
-    
+
     Args:
         chunk: The text chunk
         query: The query (optional)
@@ -169,7 +168,7 @@ def set_cached_score(
     """
     if not _CACHE_ENABLED:
         return
-    
+
     key = _make_cache_key(chunk, query, weights, provider, model_version)
     # deepcopy before acquiring the lock so we don't hold it during allocation
     stored = (copy.deepcopy(result), time.time())
@@ -203,7 +202,7 @@ def clear_cache(reset_stats: bool = False):
             _cache_stats["evictions"] = 0
 
 
-def get_cache_stats() -> Dict[str, Any]:
+def get_cache_stats() -> dict[str, Any]:
     """Get score cache statistics.
 
     Returns:
@@ -218,7 +217,7 @@ def get_cache_stats() -> Dict[str, Any]:
     with _cache_lock:
         total = _cache_stats["hits"] + _cache_stats["misses"]
         hit_rate = _cache_stats["hits"] / total if total > 0 else 0.0
-        
+
         return {
             "hits": _cache_stats["hits"],
             "misses": _cache_stats["misses"],
@@ -250,9 +249,9 @@ def reset_cache_stats():
 def print_cache_stats():
     """Print a formatted cache statistics report."""
     stats = get_cache_stats()
-    
+
     print(f"\n{'═' * 60}")
-    print(f"  PYMRSF CACHE STATISTICS")
+    print("  PYMRSF CACHE STATISTICS")
     print(f"{'═' * 60}")
     print(f"  Status      : {'Enabled' if stats['enabled'] else 'Disabled'}")
     print(f"  Cache size  : {stats['size']:,} / {stats['max_size']:,}")
@@ -282,16 +281,16 @@ _embedding_stats = {
 def get_cached_embedding(text: str):
     """
     Get cached embedding for text if available and not expired.
-    
+
     Args:
         text: Text to look up
-    
+
     Returns:
         Cached embedding or None if not found/expired
     """
     if not _CACHE_ENABLED:
         return None
-    
+
     text_hash = _cached_text_hash(text)
     with _embedding_lock:
         if text_hash in _embedding_cache:
@@ -313,17 +312,17 @@ def get_cached_embedding(text: str):
 def set_cached_embedding(text: str, embedding):
     """
     Cache an embedding for text.
-    
+
     Note: When the cache reaches _EMBEDDING_CACHE_MAX_SIZE, it clears
     all entries wholesale (not a true LRU eviction).
-    
+
     Args:
         text: Text associated with embedding
         embedding: Embedding vector to cache
     """
     if not _CACHE_ENABLED:
         return
-    
+
     text_hash = _cached_text_hash(text)
     with _embedding_lock:
         if text_hash in _embedding_cache:
@@ -356,7 +355,7 @@ def clear_embedding_cache(reset_stats: bool = False):
             _embedding_stats["clears"] = 0
 
 
-def get_embedding_cache_stats() -> Dict[str, Any]:
+def get_embedding_cache_stats() -> dict[str, Any]:
     """Get embedding cache statistics.
 
     Returns:
@@ -371,7 +370,7 @@ def get_embedding_cache_stats() -> Dict[str, Any]:
     with _embedding_lock:
         total = _embedding_stats["hits"] + _embedding_stats["misses"]
         hit_rate = _embedding_stats["hits"] / total if total > 0 else 0.0
-        
+
         return {
             "hits": _embedding_stats["hits"],
             "misses": _embedding_stats["misses"],

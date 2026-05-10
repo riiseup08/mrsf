@@ -9,19 +9,19 @@ For production use, prefer the RAG scoring and chunking APIs in the
 top-level pymrsf namespace.
 """
 
+from .benchmark import mrsf_benchmark_canterbury, mrsf_latency_benchmark
+from .inspect import mrsf_inspect, mrsf_rebuild_explained
 from .storage import (
-    mrsf_write,
+    close_connections,
+    load_index,
+    mrsf_delete,
     mrsf_read,
     mrsf_read_novel,
-    mrsf_delete,
+    mrsf_write,
     rebuild_index,
-    save_index,
-    load_index,
     reset_index_metadata,
-    close_connections,
+    save_index,
 )
-from .inspect import mrsf_inspect, mrsf_rebuild_explained
-from .benchmark import mrsf_benchmark_canterbury, mrsf_latency_benchmark
 
 __all__ = [
     "mrsf_write",

@@ -19,14 +19,26 @@ FAISS Deletion Strategy:
   (e.g., every 100 writes or on a cron schedule).
 """
 
+import json
 import logging
-import sqlite3, msgpack, uuid, json, os
-import numpy as np
+import os
+import sqlite3
+import uuid
+
 import faiss
+import msgpack
+import numpy as np
 
 _logger = logging.getLogger("pymrsf.experimental.storage")
 
-from ..core import tokenize, detokenize, compute_delta, ModelSession, MODEL_VERSION, provider_capabilities
+from ..core import (
+    MODEL_VERSION,
+    ModelSession,
+    compute_delta,
+    detokenize,
+    provider_capabilities,
+    tokenize,
+)
 from ..embeddings import embed, get_embedding_dim
 
 # Configurable paths via environment variables
@@ -88,7 +100,10 @@ def _get_index():
             # Validate embedding dimension matches expected
             actual_dim = get_embedding_dim()
             if actual_dim != EMBED_DIM:
-                _logger.warning("Embedding dimension mismatch: expected=%d, actual=%d — using actual.", EMBED_DIM, actual_dim)
+                _logger.warning(
+                    "Embedding dimension mismatch: expected=%d, actual=%d — using actual.",
+                    EMBED_DIM, actual_dim,
+                )
                 dim = actual_dim
             else:
                 dim = EMBED_DIM
@@ -138,7 +153,7 @@ def mrsf_write(text: str, doc_id: str = None) -> dict:
                 "  And set: PYMRSF_PROVIDER=local\n"
             )
         }
-    
+
     doc_id    = doc_id or str(uuid.uuid4())
     token_ids = tokenize(text)
     n         = len(token_ids)
@@ -150,7 +165,7 @@ def mrsf_write(text: str, doc_id: str = None) -> dict:
 
     vec = embed(text)
     embed_dim = len(vec)
-    
+
     # If doc_id already exists, delete old entry first
     existing = cur.execute("SELECT doc_id FROM documents WHERE doc_id=? AND deleted=0", (doc_id,)).fetchone()
     if existing:
@@ -230,9 +245,12 @@ def mrsf_read(query: str, top_k: int = 1) -> list:
     """
     # Check if ModelSession reconstruction is available
     if not provider_capabilities().get("supports_delta", False):
-        _logger.error("mrsf_read requires the local provider for ModelSession reconstruction. Install with: pip install pymrsf[local]")
+        _logger.error(
+            "mrsf_read requires the local provider for ModelSession reconstruction."
+            " Install with: pip install pymrsf[local]"
+        )
         return []
-    
+
     faiss_index, index_meta = _get_index()
     # Count non-tombstoned entries
     active_count = sum(1 for m in index_meta if m is not None)
@@ -241,18 +259,18 @@ def mrsf_read(query: str, top_k: int = 1) -> list:
 
     q_vec = embed(query)
     # Search for more results than needed to account for tombstoned entries
-    D, I  = faiss_index.search(np.array([q_vec]), min(top_k + len(_tombstones), len(index_meta)))
+    D, indices = faiss_index.search(np.array([q_vec]), min(top_k + len(_tombstones), len(index_meta)))
     results = []
 
-    for rank_idx, idx in enumerate(I[0]):
+    for rank_idx, idx in enumerate(indices[0]):
         if idx < 0 or idx >= len(index_meta):
             continue
         doc_id = index_meta[idx]
-        
+
         # Skip tombstoned entries (deleted but still in FAISS)
         if doc_id is None or doc_id in _tombstones:
             continue
-            
+
         cur, _ = _get_db()
         row = cur.execute(
             "SELECT model_version, delta, token_count FROM documents WHERE doc_id=? AND deleted=0",
@@ -296,25 +314,25 @@ def mrsf_read(query: str, top_k: int = 1) -> list:
 
 def save_index():
     """Persist the FAISS index and metadata to disk.
-    
+
     Saves the index as-is, including tombstoned (deleted) vectors in FAISS.
     The metadata file preserves the positional mapping (None for deleted slots).
     To reclaim space from deletions, call rebuild_index() then save_index().
-    
+
     Note: Full vector recovery on rebuild requires original text, which is not
     stored. For production, store embeddings in SQLite or keep the FAISS file
     as authoritative. Current best practice: avoid frequent deletions, or
     re-add documents after rebuild.
     """
     faiss_index, index_meta = _get_index()
-    
+
     # Save full index as-is (tombstoned vectors stay in FAISS)
     faiss.write_index(faiss_index, FAISS_PATH)
-    
+
     # Save metadata preserving positional mapping (None = deleted slot)
     with open(FAISS_PATH + ".meta", "w") as f:
         json.dump(index_meta, f)
-    
+
     active = sum(1 for m in index_meta if m is not None)
     tombstoned = len(index_meta) - active
     tombstone_note = f" ({tombstoned} tombstoned)" if tombstoned else ""
@@ -353,38 +371,42 @@ def load_index():
 
 def reset_index_metadata():
     """Reset FAISS index metadata from SQLite records.
-    
+
     This rebuilds the index metadata structure (document IDs) from SQLite.
     It does NOT recover original document embeddings — after calling this,
     documents must be re-added via mrsf_write() to populate the FAISS index
     vectors for semantic search.
-    
+
     Use this after index corruption or when switching to a new embedding
     model that requires a fresh index.
     """
     global _faiss_index, _index_meta, _tombstones
-    
+
     cur, _ = _get_db()
     rows = cur.execute("SELECT doc_id FROM documents WHERE deleted=0").fetchall()
-    
+
     if not rows:
         _logger.info("RESET no active documents in SQLite — nothing to reset.")
         return
 
     _logger.info("RESET rebuilding index metadata from %d SQLite documents...", len(rows))
-    
+
     # Get fresh index (empty)
     actual_dim = get_embedding_dim()
     _faiss_index = faiss.IndexHNSWFlat(actual_dim, 32)
     _index_meta = []
     _tombstones = set()
-    
+
     # Rebuild metadata list from SQLite (no vectors recovered)
     for row in rows:
         doc_id = row[0]
         _index_meta.append(doc_id)
-    
-    _logger.info("RESET complete — %d index metadata entries. Embedding vectors not recovered; re-add with mrsf_write().", len(_index_meta))
+
+    _logger.info(
+        "RESET complete — %d index metadata entries."
+        " Embedding vectors not recovered; re-add with mrsf_write().",
+        len(_index_meta),
+    )
 
 
 def rebuild_index(verbose: bool = True):
@@ -479,12 +501,12 @@ def mrsf_read_novel(
 
     q_vec = embed(query)
     search_k = min(top_k * 4 + len(_tombstones), max(active_count, 1))
-    D, I = faiss_index.search(np.array([q_vec]), search_k)
+    D, indices = faiss_index.search(np.array([q_vec]), search_k)
 
     cur, _ = _get_db()
     candidates = []
 
-    for rank_idx, idx in enumerate(I[0]):
+    for rank_idx, idx in enumerate(indices[0]):
         if idx < 0 or idx >= len(index_meta):
             continue
         doc_id = index_meta[idx]
@@ -532,13 +554,13 @@ def close_connections():
     """
     global _conn, _cur, _faiss_index, _index_meta, _tombstones
     global _conn, _cur, _faiss_index, _index_meta, _tombstones
-    
+
     if _conn is not None:
         _conn.close()
         _conn = None
         _cur = None
         _logger.debug("CLEANUP SQLite connection closed.")
-    
+
     # FAISS index doesn't need explicit cleanup, but we can reset references
     if _faiss_index is not None:
         _logger.debug("CLEANUP FAISS index released (%d documents).", _faiss_index.ntotal)

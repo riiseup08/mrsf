@@ -9,14 +9,19 @@ description = "Novelty-Aware RAG scoring — Filter chunks by information gain, 
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Eric Monthe"}]
-requires-python = ">=3.9"
-keywords = ["rag", "llm", "novelty", "embeddings", "retrieval", "semantic"]
+requires-python = ">=3.10"
+keywords = ["rag", "llm", "novelty", "embeddings", "retrieval", "semantic", "information-gain"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
     "httpx>=0.25.0",
@@ -25,11 +30,20 @@ dependencies = [
     "msgpack>=1.0.0",
     "requests>=2.31.0",
     "tiktoken>=0.5.0",
-    "tenacity>=8.0.0",
+    "tenacity>=8.0.0,<10.0.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "pytest-cov", "hypothesis>=6.0"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "hypothesis>=6.0.0,<7.0.0",
+    "ruff>=0.1.0",
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=2.0.0",
+]
 local = ["llama-cpp-python>=0.2.50,<0.3.0"]
 openai = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
@@ -40,10 +54,28 @@ pymrsf = "pymrsf.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/riiseup08/mrsf"
+Repository = "https://github.com/riiseup08/mrsf"
+Documentation = "https://github.com/riiseup08/mrsf#readme"
+Changelog = "https://github.com/riiseup08/mrsf/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = ["slow: marks tests as slow (deselect with -m 'not slow')"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402"]
+"pymrsf/experimental/storage.py" = ["E402"]
+"pymrsf/rag.py" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "double"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pymrsf"]

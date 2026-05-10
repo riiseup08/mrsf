@@ -10,9 +10,9 @@ Higher compression = model knows it better.
   - ❌ Anthropic: Probing not supported (use relevance-based RAG instead)
 
 **When probing is unavailable**:
-  Non-local providers can still use `score_chunk()` and `filter_chunks()` from 
+  Non-local providers can still use `score_chunk()` and `filter_chunks()` from
   the rag module for relevance-based RAG scoring without novelty detection.
-  
+
   Example:
     >>> from pymrsf import score_chunk
     >>> result = score_chunk(chunk, query)  # Works with all providers
@@ -21,7 +21,7 @@ Higher compression = model knows it better.
 
 **Usage**:
     >>> from pymrsf import probe, provider_capabilities
-    >>> 
+    >>>
     >>> # Check if probing is available
     >>> if provider_capabilities()["supports_probe"]:
     ...     result = probe("The quick brown fox jumps over the lazy dog.")
@@ -29,8 +29,16 @@ Higher compression = model knows it better.
     ...     print(result["label"])  # memorized/familiar/common/uncommon/unknown
 """
 import numpy as np
-from .core import tokenize, detokenize, quantized_argmax, get_backend, get_raw_lm, MODEL_VERSION, provider_capabilities
 
+from .core import (
+    MODEL_VERSION,
+    detokenize,
+    get_backend,
+    get_raw_lm,
+    provider_capabilities,
+    quantized_argmax,
+    tokenize,
+)
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
 # These were calibrated from experiments:
@@ -83,7 +91,7 @@ def probe(text: str, verbose: bool = False) -> dict:
                 "  API providers (OpenAI, Anthropic) don't support this feature.\n"
             )
         }
-    
+
     token_ids = tokenize(text)
     n         = len(token_ids)
 
@@ -96,7 +104,7 @@ def probe(text: str, verbose: bool = False) -> dict:
     # Get raw LM object for direct score access
     backend = get_backend()
     lm_obj  = backend.get("lm") or get_raw_lm()
-    
+
     lm_obj.reset()
     lm_obj.eval(token_ids)
 
@@ -142,16 +150,16 @@ def probe(text: str, verbose: bool = False) -> dict:
 def probe_compare(texts: list[str]) -> list[dict]:
     """
     Probe multiple texts and return them ranked by knowledge score (highest first).
-    
+
     Texts that fail to probe (e.g., too short or provider doesn't support probing)
     are included in results but sorted to the end with knowledge_score of -1.
-    
+
     Args:
         texts: List of text strings to probe
-        
+
     Returns:
         List of probe results, sorted by knowledge_score (descending)
-        
+
     Example:
         >>> results = probe_compare([
         ...     "The quick brown fox",
@@ -165,11 +173,11 @@ def probe_compare(texts: list[str]) -> list[dict]:
     for text in texts:
         r = probe(text)
         r["text"] = text
-        
+
         # Handle error cases: set knowledge_score to -1 so they sort to the end
         if "error" in r and "knowledge_score" not in r:
             r["knowledge_score"] = -1
-            
+
         results.append(r)
 
     # Sort by knowledge_score, errors (score=-1) go to the end
@@ -183,7 +191,7 @@ def _print_report(text, compression, score, label, description, surprises, heatm
     bar      = "█" * filled + "░" * (bar_len - filled)
 
     print(f"\n{'═' * 65}")
-    print(f"  PYMRSF KNOWLEDGE PROBE")
+    print("  PYMRSF KNOWLEDGE PROBE")
     print(f"{'═' * 65}")
     print(f"  Text    : {text[:70]}{'...' if len(text) > 70 else ''}")
     print(f"  Model   : {MODEL_VERSION}")
@@ -196,15 +204,15 @@ def _print_report(text, compression, score, label, description, surprises, heatm
     print(f"{'─' * 65}")
 
     if surprises:
-        print(f"  Surprise tokens (what the model didn't expect):")
+        print("  Surprise tokens (what the model didn't expect):")
         for pos, tok in surprises[:10]:
             print(f"    pos {pos:>3} → '{tok}'")
         if len(surprises) > 10:
             print(f"    ... and {len(surprises) - 10} more")
     else:
-        print(f"  No surprises — model predicted every token perfectly.")
+        print("  No surprises — model predicted every token perfectly.")
 
-    print(f"\n  Token heatmap  (✅ predicted | ⚡ surprise):")
+    print("\n  Token heatmap  (✅ predicted | ⚡ surprise):")
     line = ""
     for item in heatmap:
         mark = "⚡" if item["surprised"] else "✅"

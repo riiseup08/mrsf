@@ -25,8 +25,10 @@ Production note:
 import logging
 import os
 import threading
+
 import numpy as np
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
 
 def _cfg():
     """Return the current Config, falling back to env vars if pymrsf isn't fully initialised yet."""

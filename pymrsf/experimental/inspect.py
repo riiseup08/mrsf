@@ -1,14 +1,24 @@
 import numpy as np
-from ..core import tokenize, detokenize, quantized_argmax, compute_delta, ModelSession, get_backend, get_raw_lm, provider_capabilities
+
+from ..core import (
+    ModelSession,
+    compute_delta,
+    detokenize,
+    get_backend,
+    get_raw_lm,
+    provider_capabilities,
+    quantized_argmax,
+    tokenize,
+)
 
 
 def mrsf_inspect(text: str, return_data: bool = False):
     """Inspect delta compression for a text document.
-    
+
     Args:
         text: Text to inspect
         return_data: If True, return structured dict instead of printing
-    
+
     Returns:
         dict if return_data=True, containing:
           - surprises: list of surprise token strings
@@ -27,10 +37,10 @@ def mrsf_inspect(text: str, return_data: bool = False):
             return {"error": error_msg}
         print(error_msg)
         return
-    
+
     token_ids = tokenize(text)
     n         = len(token_ids)
-    delta_dict = {pos: tid for pos, tid in compute_delta(token_ids)}
+    {pos: tid for pos, tid in compute_delta(token_ids)}
 
     # Need raw scores for display — load model and eval
     backend = get_backend()
@@ -65,7 +75,7 @@ def mrsf_inspect(text: str, return_data: bool = False):
     print(f"{'─'*65}")
     print(f"Surprise tokens in Δ : {surprises}")
     print(f"Compression          : {1 - len(surprises) / max(n-1, 1):.1%}\n")
-    
+
     # Return structured data if requested
     if return_data:
         return {
@@ -78,11 +88,11 @@ def mrsf_inspect(text: str, return_data: bool = False):
 
 def mrsf_rebuild_explained(text: str, return_data: bool = False):
     """Explain step-by-step how delta reconstruction works.
-    
+
     Args:
         text: Text to rebuild
         return_data: If True, return structured dict instead of printing
-    
+
     Returns:
         dict if return_data=True, containing:
           - match: bool (whether rebuild matches original)
@@ -101,7 +111,7 @@ def mrsf_rebuild_explained(text: str, return_data: bool = False):
             return {"error": error_msg}
         print(error_msg)
         return
-    
+
     token_ids = tokenize(text)
     n         = len(token_ids)
 
@@ -110,9 +120,9 @@ def mrsf_rebuild_explained(text: str, return_data: bool = False):
     print(f"\n{'═'*65}")
     print(f"REBUILDING: {text[:70]}")
     print(f"{'═'*65}")
-    print(f"\n STEP 1 — What Δ stores:")
+    print("\n STEP 1 — What Δ stores:")
     print(f"  {[(pos, detokenize([tid]).strip()) for pos, tid in delta_dict.items()]}")
-    print(f"\n STEP 2 — Token by token reconstruction:\n")
+    print("\n STEP 2 — Token by token reconstruction:\n")
     print(f"  {'POS':<5} {'SOURCE':<12} {'RUNNING TEXT'}")
     print(f"  {'─'*65}")
 
@@ -120,7 +130,7 @@ def mrsf_rebuild_explained(text: str, return_data: bool = False):
     out_ids = [bos]
     session = ModelSession()
     session.feed(bos)
-    
+
     steps = []  # For structured data return
 
     for i in range(1, n):
@@ -142,7 +152,7 @@ def mrsf_rebuild_explained(text: str, return_data: bool = False):
     # Exclude BOS token for final comparison
     rebuilt = detokenize(out_ids[1:]).strip()
     match = rebuilt == text.strip()
-    
+
     if return_data:
         return {
             "match": match,
@@ -150,7 +160,7 @@ def mrsf_rebuild_explained(text: str, return_data: bool = False):
             "rebuilt": rebuilt,
             "steps": steps,
         }
-    
+
     print(f"\n{'═'*65}")
     print(f" ORIGINAL : {text}")
     print(f" REBUILT  : {rebuilt}")
