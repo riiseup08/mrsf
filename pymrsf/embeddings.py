@@ -26,8 +26,34 @@ import logging
 import os
 import threading
 import numpy as np
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 _logger = logging.getLogger("pymrsf.embeddings")
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Retry on connection/timeout errors and HTTP 5xx responses."""
+    import requests
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return True
+    if isinstance(exc, requests.exceptions.Timeout):
+        return True
+    if isinstance(exc, requests.exceptions.HTTPError):
+        resp = getattr(exc, "response", None)
+        return resp is not None and resp.status_code >= 500
+    return False
+
+
+def _log_retry(retry_state) -> None:
+    _logger.warning(
+        "embed retry %d/%d after %s: %s",
+        retry_state.attempt_number,
+        3,
+        retry_state.outcome.exception().__class__.__name__,
+        retry_state.outcome.exception(),
+    )
 
 # Environment variable configuration — read at call time via get_config() (Task 3.3)
 # These module-level defaults remain for backward compat with existing .env setups.
@@ -43,10 +69,17 @@ _embed_dim_lock = threading.Lock()
 
 # ── Provider implementations ──────────────────────────────────────────────────
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=2),
+    retry=retry_if_exception(_is_retryable),
+    after=_log_retry,
+    reraise=True,
+)
 def _embed_with_ollama(text: str) -> np.ndarray:
     import requests
-    base   = os.getenv("PYMRSF_OLLAMA_BASE", OLLAMA_BASE)
-    model  = os.getenv("PYMRSF_EMBED_MODEL", EMBED_MODEL)
+    base    = os.getenv("PYMRSF_OLLAMA_BASE", OLLAMA_BASE)
+    model   = os.getenv("PYMRSF_EMBED_MODEL", EMBED_MODEL)
     timeout = int(os.getenv("PYMRSF_EMBED_TIMEOUT", str(EMBED_TIMEOUT)))
     r = requests.post(
         f"{base}/api/embed",
@@ -57,6 +90,13 @@ def _embed_with_ollama(text: str) -> np.ndarray:
     return np.array(r.json()["embeddings"][0], dtype="float32")
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=2),
+    retry=retry_if_exception(_is_retryable),
+    after=_log_retry,
+    reraise=True,
+)
 def _embed_with_openai(text: str) -> np.ndarray:
     from openai import OpenAI
     api_key = os.getenv("OPENAI_API_KEY")
