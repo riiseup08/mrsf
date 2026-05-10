@@ -1,3 +1,26 @@
+"""
+pymrsf — Model-Relative Semantic Filtering
+
+Use language model surprise signals for smarter RAG pipelines:
+
+    from pymrsf import score_chunk, filter_chunks, smart_chunk, probe
+
+    # Score a candidate chunk against a query
+    result = score_chunk(chunk_text, query="What is backpropagation?")
+
+    # Filter a list of chunks to the most relevant
+    kept = filter_chunks(chunks, query="neural network training")
+
+    # Split text at semantic boundaries (surprise-guided)
+    pieces = smart_chunk(long_document)
+
+    # Probe what the model already knows
+    knowledge = probe("What is the Eiffel Tower?")
+
+The MRSF delta-compression storage system (mrsf_write, mrsf_read, etc.)
+is available under pymrsf.experimental as a research-grade backend.
+"""
+
 import os
 from dataclasses import dataclass, field
 
@@ -90,7 +113,35 @@ def get_config() -> Config:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 __all__ = [
-    # Core functions
+    # ── RAG scoring (headline API) ─────────────────────────────────────────────
+    "score_chunk",
+    "score_chunks",
+    "score_chunks_batch",
+    "explain_chunk",
+    "filter_chunks",
+    "smart_filter",
+    "DEFAULT_WEIGHTS",
+    "DEFAULT_RELEVANCE_CUTOFF",
+    "DEFAULT_RAG_THRESHOLDS",
+    "WeightConfig",
+
+    # Async variants
+    "score_chunk_async",
+    "score_chunks_async",
+    "filter_chunks_async",
+
+    # Chunking
+    "smart_chunk",
+
+    # Knowledge probing
+    "probe",
+    "probe_compare",
+
+    # Embeddings
+    "embed",
+    "get_embedding_dim",
+
+    # ── Core / backend ─────────────────────────────────────────────────────────
     "tokenize",
     "detokenize",
     "quantized_argmax",
@@ -98,34 +149,29 @@ __all__ = [
     "compute_delta",
     "next_token_greedy",
     "ModelSession",
-    
-    # Backend access
     "get_backend",
     "get_raw_lm",
     "provider_capabilities",
     "set_provider",
-    
-    # RAG scoring
-    "score_chunk",
-    "score_chunks",
-    "score_chunks_batch",
-    "explain_chunk",
-    "filter_chunks",
-    "smart_filter",
-    "smart_chunk",
-    "score_chunk_async",
-    "score_chunks_async",
-    "filter_chunks_async",
-    "DEFAULT_WEIGHTS",
-    "DEFAULT_RELEVANCE_CUTOFF",
-    "DEFAULT_RAG_THRESHOLDS",
-    "WeightConfig",
-    
-    # Knowledge probing
-    "probe",
-    "probe_compare",
-    
-    # Experimental: storage & compression
+    "PROVIDER",
+    "MODEL_VERSION",
+    "LOGIT_PRECISION",
+
+    # ── Cache ──────────────────────────────────────────────────────────────────
+    "cache",
+    "configure_cache",
+    "get_cache_stats",
+    "get_embedding_cache_stats",
+    "reset_cache_stats",
+    "clear_cache",
+    "clear_embedding_cache",
+
+    # ── Runtime configuration ──────────────────────────────────────────────────
+    "Config",
+    "configure",
+    "get_config",
+
+    # ── Experimental: MRSF storage backend ────────────────────────────────────
     "experimental",
     "mrsf_write",
     "mrsf_read",
@@ -137,39 +183,10 @@ __all__ = [
     "reset_index_metadata",
     "rebuild_faiss_from_sqlite",  # Deprecated alias — removed in v0.6
     "close_connections",
-
-    # Experimental: inspection & debugging
     "mrsf_inspect",
     "mrsf_rebuild_explained",
-
-    # Experimental: benchmarking
     "mrsf_benchmark_canterbury",
     "mrsf_latency_benchmark",
-    
-    # Embeddings
-    "embed",
-    "get_embedding_dim",
-    
-    # Cache module
-    "cache",
-    
-    # Cache configuration functions
-    "configure_cache",
-    "get_cache_stats",
-    "get_embedding_cache_stats",
-    "reset_cache_stats",
-    "clear_cache",
-    "clear_embedding_cache",
-    
-    # Constants
-    "PROVIDER",
-    "MODEL_VERSION",
-    "LOGIT_PRECISION",
-    
-    # Runtime configuration
-    "Config",
-    "configure",
-    "get_config",
 
     # Version
     "__version__",
