@@ -9,7 +9,7 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # for creating GitHub Release
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -24,15 +24,15 @@ jobs:
       - name: Build sdist + wheel
         run: python -m build
 
-      - name: Publish to TestPyPI (pre-release: rc, a, b, dev)
-        if: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'dev') }}
+      - name: Publish to TestPyPI
+        if: contains(github.ref_name, 'rc')
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
           password: ${{ secrets.TEST_PYPI_API_TOKEN }}
 
-      - name: Publish to PyPI (stable release)
-        if: ${{ !contains(github.ref_name, 'rc') && !contains(github.ref_name, 'a') && !contains(github.ref_name, 'b') && !contains(github.ref_name, 'dev') }}
+      - name: Publish to PyPI
+        if: ${{ !contains(github.ref_name, 'rc') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
