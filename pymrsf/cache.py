@@ -2,21 +2,24 @@
 pymrsf.cache — Caching layer for RAG chunk scores
 
 Avoids re-scoring the same chunks across multiple queries.
-Thread-safe, configurable cache with statistics.
+Thread-safe, LRU caches with statistics.
 
-Caching Strategy:
-  - Score cache: Time-based eviction (removes oldest entry by timestamp)
-  - Embedding cache: Wholesale clear when limit reached
-  
-Note: This is not a strict access-order LRU cache. The score cache evicts
-based on insertion time, not access time.
+Caching strategy:
+  - Score cache: LRU eviction via OrderedDict.popitem(last=False).
+    move_to_end() on every hit keeps hot entries alive.
+  - Embedding cache: same LRU strategy, separate size/TTL limits.
+
+Threading model:
+  - Both caches hold their lock only for dict operations.
+  - deepcopy is performed outside the lock to avoid serialising callers
+    on potentially large result objects.
 """
 
 import hashlib
 import time
 import copy
+from collections import OrderedDict
 from typing import Optional, Dict, Any
-from functools import lru_cache
 import threading
 
 
@@ -29,7 +32,7 @@ _EMBEDDING_CACHE_MAX_SIZE = 5000  # Separate limit for embeddings
 _EMBEDDING_CACHE_TTL = 7200  # Longer TTL for embeddings (2 hours)
 
 # Global cache and statistics
-_cache: Dict[str, tuple] = {}  # key -> (result, timestamp)
+_cache: OrderedDict = OrderedDict()  # key -> (result, timestamp), LRU order
 _cache_lock = threading.Lock()
 _cache_stats = {
     "hits": 0,
@@ -120,23 +123,23 @@ def get_cached_score(
     
     key = _make_cache_key(chunk, query, weights, provider, model_version)
     
+    cached_result = None
     with _cache_lock:
         if key in _cache:
             result, timestamp = _cache[key]
-            
-            # Check TTL
+
             if _CACHE_TTL > 0 and (time.time() - timestamp) > _CACHE_TTL:
-                # Expired - remove it
                 del _cache[key]
                 _cache_stats["misses"] += 1
-                return None
-            
-            _cache_stats["hits"] += 1
-            # Deep copy to prevent mutations from affecting cached data
-            return copy.deepcopy(result)
-        
-        _cache_stats["misses"] += 1
-        return None
+            else:
+                _cache.move_to_end(key)   # mark as recently used
+                _cache_stats["hits"] += 1
+                cached_result = result    # ref only — deepcopy outside lock
+        else:
+            _cache_stats["misses"] += 1
+
+    # deepcopy outside the lock so we don't block other threads
+    return copy.deepcopy(cached_result) if cached_result is not None else None
 
 
 def set_cached_score(
@@ -162,17 +165,15 @@ def set_cached_score(
         return
     
     key = _make_cache_key(chunk, query, weights, provider, model_version)
-    
+    # deepcopy before acquiring the lock so we don't hold it during allocation
+    stored = (copy.deepcopy(result), time.time())
+
     with _cache_lock:
-        # Time-based eviction if cache is full (remove oldest by timestamp)
-        if len(_cache) >= _CACHE_MAX_SIZE:
-            # Evict oldest entry by timestamp
-            oldest_key = min(_cache.keys(), key=lambda k: _cache[k][1])
-            del _cache[oldest_key]
+        if len(_cache) >= _CACHE_MAX_SIZE and key not in _cache:
+            _cache.popitem(last=False)  # evict least recently used — O(1)
             _cache_stats["evictions"] += 1
-        
-        # Deep copy to prevent external mutations from affecting cache
-        _cache[key] = (copy.deepcopy(result), time.time())
+        _cache[key] = stored
+        _cache.move_to_end(key)  # newest entry is most recently used
 
 
 def clear_cache(reset_stats: bool = False):
@@ -239,18 +240,17 @@ def print_cache_stats():
 
 # ── Embedding cache (for relevance scoring) ────────────────────────────────────
 
-@lru_cache(maxsize=1000)
 def _cached_text_hash(text: str) -> str:
-    """Cache text hashes for embedding lookups."""
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-_embedding_cache: Dict[str, tuple] = {}  # hash -> (embedding, timestamp)
+_embedding_cache: OrderedDict = OrderedDict()  # hash -> (embedding, timestamp), LRU order
 _embedding_lock = threading.Lock()
 _embedding_stats = {
     "hits": 0,
     "misses": 0,
-    "clears": 0,  # Counts wholesale clear events
+    "evictions": 0,  # Individual LRU evictions (replaces old "clears" counter)
+    "clears": 0,     # Backward-compat alias — same counter as evictions
 }
 
 
@@ -271,17 +271,16 @@ def get_cached_embedding(text: str):
     with _embedding_lock:
         if text_hash in _embedding_cache:
             embedding, timestamp = _embedding_cache[text_hash]
-            
-            # Check TTL for embeddings
+
             if _EMBEDDING_CACHE_TTL > 0 and (time.time() - timestamp) > _EMBEDDING_CACHE_TTL:
-                # Expired - remove it
                 del _embedding_cache[text_hash]
                 _embedding_stats["misses"] += 1
                 return None
-            
+
+            _embedding_cache.move_to_end(text_hash)  # mark as recently used
             _embedding_stats["hits"] += 1
             return embedding
-        
+
         _embedding_stats["misses"] += 1
         return None
 
@@ -302,10 +301,12 @@ def set_cached_embedding(text: str, embedding):
     
     text_hash = _cached_text_hash(text)
     with _embedding_lock:
-        # Wholesale clear when limit reached (not true LRU)
-        if len(_embedding_cache) >= _EMBEDDING_CACHE_MAX_SIZE:
-            _embedding_cache.clear()
-            _embedding_stats["clears"] += 1
+        if text_hash in _embedding_cache:
+            _embedding_cache.move_to_end(text_hash)
+        elif len(_embedding_cache) >= _EMBEDDING_CACHE_MAX_SIZE:
+            _embedding_cache.popitem(last=False)  # evict least recently used
+            _embedding_stats["evictions"] += 1
+            _embedding_stats["clears"] = _embedding_stats["evictions"]  # keep alias in sync
         _embedding_cache[text_hash] = (embedding, time.time())
 
 
@@ -322,6 +323,7 @@ def clear_embedding_cache(reset_stats: bool = False):
         if reset_stats:
             _embedding_stats["hits"] = 0
             _embedding_stats["misses"] = 0
+            _embedding_stats["evictions"] = 0
             _embedding_stats["clears"] = 0
 
 
@@ -339,7 +341,8 @@ def get_embedding_cache_stats() -> Dict[str, Any]:
         return {
             "hits": _embedding_stats["hits"],
             "misses": _embedding_stats["misses"],
-            "clears": _embedding_stats["clears"],
+            "evictions": _embedding_stats["evictions"],
+            "clears": _embedding_stats["evictions"],  # backward-compat alias
             "size": len(_embedding_cache),
             "max_size": _EMBEDDING_CACHE_MAX_SIZE,
             "hit_rate": round(hit_rate * 100, 2),
