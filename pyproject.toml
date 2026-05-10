@@ -28,14 +28,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov"]
+dev = ["pytest", "pytest-asyncio", "pytest-cov", "hypothesis>=6.0"]
 local = ["llama-cpp-python>=0.2.0"]
 openai = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
 all = ["llama-cpp-python>=0.2.0", "openai>=1.0.0", "anthropic>=0.18.0"]
 
+[project.scripts]
+pymrsf = "pymrsf.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/riiseup08/mrsf"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = ["slow: marks tests as slow (deselect with -m 'not slow')"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["pymrsf"]
