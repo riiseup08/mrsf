@@ -35,7 +35,8 @@
       "Bash(curl -s \"https://api.github.com/repos/riiseup08/Model-Relative-Semantic-Filesystems/actions/runs/25631093151/jobs\")",
       "PowerShell(python -m venv C:\\\\Users\\\\pokam\\\\mrsf\\\\.claude\\\\test_venv --clear 2>&1)",
       "PowerShell(& C:\\\\Users\\\\pokam\\\\mrsf\\\\.claude\\\\test_venv\\\\Scripts\\\\python -c \"import pymrsf; print\\(f'Version: {pymrsf.__version__}'\\); print\\(f'Provider: {pymrsf.provider_capabilities\\(\\)}'\\); print\\('Import OK'\\)\" 2>&1)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "PowerShell(& C:\\\\Users\\\\pokam\\\\mrsf\\\\.claude\\\\test_venv\\\\Scripts\\\\pip install C:\\\\Users\\\\pokam\\\\mrsf\\\\dist\\\\pymrsf-0.6.0-py3-none-any.whl 2>&1)"
     ]
   }
 }

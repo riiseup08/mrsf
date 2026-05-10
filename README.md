@@ -1,7 +1,7 @@
 # pymrsf — Model-Relative Semantic Filtering
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/riiseup08/Model-Relative-Semantic-Filesystems/blob/main/LICENSE)
 [![CI](https://github.com/riiseup08/Model-Relative-Semantic-Filesystems/actions/workflows/ci.yml/badge.svg)](https://github.com/riiseup08/Model-Relative-Semantic-Filesystems/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-84%20passing-brightgreen)]()
 
@@ -158,7 +158,7 @@ save_index()
 results = mrsf_read("famous French landmark", top_k=1)
 ```
 
-[Full experimental docs →](pymrsf/experimental/)
+[Full experimental docs →](https://github.com/riiseup08/Model-Relative-Semantic-Filesystems/tree/main/pymrsf/experimental)
 
 ---
 
