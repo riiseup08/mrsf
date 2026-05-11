@@ -70,7 +70,7 @@ from .rag import (
     smart_filter,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 # ── Centralized runtime configuration ─────────────────────────────────────────

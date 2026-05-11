@@ -3,16 +3,17 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/riiseup08/Model-Relative-Semantic-Filesystems/blob/main/LICENSE)
 [![CI](https://github.com/riiseup08/Model-Relative-Semantic-Filesystems/actions/workflows/ci.yml/badge.svg)](https://github.com/riiseup08/Model-Relative-Semantic-Filesystems/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-84%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-95%20passing-brightgreen)]()
 
-**Score RAG chunks by information gain — not just relevance.**
+**Split text at knowledge boundaries — then score by information gain.**
 
-Vector databases and semantic chunkers retrieve by relevance (cosine similarity). A chunk can be highly relevant yet contain only facts the model already memorized during training — wasted context window. pymrsf uses the model's own predictive surprise to detect which chunks contain genuinely *new* information.
+Semantic chunkers split at sentence or token boundaries. `smart_chunk` uses the model's own predictive surprise to detect where one topic ends and another begins — producing chunks that align with actual knowledge transitions, not arbitrary token counts.
 
-- **Novelty**: Does the model already know this? (surprise-based)
-- **Relevance**: Is this related to the query? (cosine similarity)
-- **Query Ignorance**: Does the model even know the answer? (probe-based gate)
-- **Diversity**: Does a better chunk already cover this? (dedup post-filter)
+- **Surprise-guided chunking** — finds natural topic boundaries using the model's prediction signal
+- **Novelty scoring** — measures whether the model already knows a chunk (surprise-based)
+- **Relevance scoring** — cosine similarity against your query
+- **Query Ignorance** — does the model even know the answer? (probe-based gate)
+- **Diversity** — dedup post-filter to avoid redundant chunks
 
 ---
 
@@ -35,7 +36,34 @@ ollama pull nomic-embed-text
 
 ---
 
-## 30-second example — score and filter chunks
+## 30-second example — surprise-guided chunking
+
+Instead of splitting at fixed sizes or sentence boundaries, `smart_chunk` uses the model's surprise signal to find natural knowledge transitions:
+
+```python
+from pymrsf import smart_chunk
+
+long_article = """
+Quantum computing leverages superposition and entanglement to perform
+calculations that would be infeasible for classical computers. Unlike
+classical bits, qubits can exist in multiple states simultaneously.
+...
+Machine learning models learn patterns from data through iterative
+optimization of a loss function. Neural networks, in particular,
+use backpropagation to adjust millions of parameters.
+...
+"""
+
+# Chunks split at the boundary between "quantum computing" and "ML" —
+# where the model's surprise signal drops after absorbing one topic
+pieces = smart_chunk(long_article, min_chunk_len=200, max_chunk_len=800)
+```
+
+Works with any provider — uses surprise signals (local) or embedding similarity (API) to detect topic boundaries. Falls back to sentence splitting if neither is available.
+
+---
+
+## 60-second example — score and filter chunks
 
 ```python
 from pymrsf import score_chunk, filter_chunks
@@ -67,48 +95,19 @@ useful = asyncio.run(filter_chunks_async(chunks, query="...", min_rag_score=50))
 
 ---
 
-## 60-second example — surprise-guided chunking
-
-Instead of splitting at fixed sizes or sentence boundaries, `smart_chunk` uses the model's surprise signal to find natural knowledge transitions:
-
-```python
-from pymrsf import smart_chunk
-
-long_article = """
-Quantum computing leverages superposition and entanglement to perform
-calculations that would be infeasible for classical computers. Unlike
-classical bits, qubits can exist in multiple states simultaneously.
-...
-Machine learning models learn patterns from data through iterative
-optimization of a loss function. Neural networks, in particular,
-use backpropagation to adjust millions of parameters.
-...
-"""
-
-# Chunks split at the boundary between "quantum computing" and "ML" —
-# where the model's surprise signal drops after absorbing one topic
-pieces = smart_chunk(long_article, min_chunk_len=200, max_chunk_len=800)
-```
-
-**Requires the local provider.** Falls back to sentence splitting for API providers.
-
----
-
 ## Provider matrix
-
-This is the most important table in this README — it tells you which features work with which provider.
 
 | Feature | local | openai | anthropic |
 |---------|-------|--------|-----------|
+| **smart_chunk** (topic-aware) | Surprise-guided | Embedding similarity | Embedding similarity |
 | **RAG scoring** | Full (novelty + relevance + ignorance) | Relevance-only | Relevance-only |
 | **Knowledge probing** | ✅ Full | ⚠️ Limited | ❌ |
-| **smart_chunk** (surprise-guided) | ✅ Yes | Fallback to sentence | Fallback to sentence |
-| **Delta compression / round-trip** | ✅ Yes | ❌ | ❌ |
+| **Delta compression / round-trip** | Experimental | ❌ | ❌ |
 | **Model session** (KV-cache) | ✅ Yes | ❌ | ❌ |
 | **Async scoring** | ✅ | ✅ | ✅ |
 | **Score caching** | ✅ | ✅ | ✅ |
 
-**Key takeaway:** probing, smart_chunk, and the experimental round-trip storage all require the **local** provider (`pip install pymrsf[local]` + a GGUF model). If you only need relevance-based RAG scoring, OpenAI or Anthropic work fine.
+**Key takeaway:** Probing and surprise-guided chunking require the **local** provider (`pip install pymrsf[local]` + a GGUF model). Relevance scoring and embedding-based topic chunking work with any provider.
 
 ---
 
@@ -146,7 +145,7 @@ See [ENV_CONFIG.md](https://github.com/riiseup08/Model-Relative-Semantic-Filesys
 
 ## Experimental: MRSF delta-compression storage
 
-The round-trip storage backend stores only "surprise" tokens (40–60% compression) and reconstructs text via O(n) model inference. Import from `pymrsf.experimental` to signal the research-grade scope:
+A research backend that stores only "surprise" tokens (40–60% compression) and reconstructs text via model inference. Import from `pymrsf.experimental`:
 
 ```python
 from pymrsf.experimental import mrsf_write, mrsf_read, save_index

@@ -5,6 +5,14 @@ All notable changes to pymrsf will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-05-10
+
+### Fixed
+- README test badge updated (95 passing) and Config section added.
+- README changes appear on PyPI (re-uploaded with version bump).
+
+---
+
 ## [1.0.0] — 2026-05-10
 
 ### Stable release — production-ready RAG chunk scoring
