@@ -5,6 +5,87 @@ All notable changes to pymrsf will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-05-10
+
+### Stable release — production-ready RAG chunk scoring
+
+The `pymrsf` library is now stable. All core APIs are solidified, the config
+system is live-reconfigurable, and provider switching works without stale
+bindings or import-time capture bugs.
+
+### Major changes since v0.7.0
+
+- **Live-reconfigurable Config** — `pymrsf.configure()` now invalidates model
+  state automatically when provider or model-path changes. Module-level constants
+  (`PROVIDER`, `LOGIT_PRECISION`, `MODEL_VERSION`) are deprecated but continue
+  to resolve via PEP 562 `__getattr__` shims.
+- **Provider switching works** — `set_provider()` and `configure()` use
+  identical reset logic. No more stale probe bindings or cache-key mismatches.
+- **Embedding API provider routing** — Anthropic's deprecated embedding API
+  is replaced with Ollama routing. OpenAI embedding guard prevents
+  Ollama-shaped model names from being sent to OpenAI.
+- **OpenAI `get_surprises` fixed** — Now uses the legacy completions endpoint
+  (`echo=True`, `logprobs=5`) for true per-position logprobs. Chat models
+  raise a clear `NotImplementedError` with remediation options.
+- **`compute_conditional_novelty` flag** — Opt-in to avoid triple-probe cost
+  (default `False`). Propagated through all sync/async functions.
+- **`score_chunks_batch` simplified** — Now delegates to `score_chunks`.
+- **Deadlock-free embeddings** — Benign race pattern replaces double-checked
+  locking on `_embed_dim_cache`.
+- **API skip-gate fixed** — Query-ignorance gate correctly skips only when
+  probe data is available.
+
+### New Config fields
+- `model_version` — explicit model override (env `PYMRSF_MODEL_VERSION`)
+- `n_threads` — CPU thread count for local model (env `PYMRSF_N_THREADS`)
+- `surprise_threshold` — surprise logprob threshold (env `PYMRSF_SURPRISE_THRESHOLD`)
+- `allow_provider_fallback` — graceful fallback on embed failure (env `PYMRSF_ALLOW_PROVIDER_FALLBACK`)
+
+### Backward compat
+- `from pymrsf.core import PROVIDER` / `LOGIT_PRECISION` / `MODEL_VERSION`
+  still works (resolves live via `__getattr__`).
+- Env-var-only setups continue to work without calling `configure()`.
+- `set_provider("openai")` still works (delegates to `configure`).
+
+### Tests
+- 95 tests, 0 failures.
+- Smoke tests covering configure → set_provider → backward-compat → get_surprises.
+
+---
+
+## [0.7.0] — 2026-05-10
+
+### Breaking changes
+- **Delta compression removed from top-level API.** `mrsf_write`, `mrsf_read`,
+  `mrsf_delete`, `rebuild_index`, `save_index`, `load_index`, `close_connections`,
+  and related functions are no longer re-exported from `pymrsf`. Import from
+  `pymrsf.experimental` instead.
+- `rebuild_faiss_from_sqlite()` deprecated alias removed.
+- **Cross-model-version enforcement (Property P1).** Reading delta-compressed
+  records under a different `MODEL_VERSION` now raises `ValueError` instead of
+  logging a warning. Records are bound to the model version that created them.
+
+### New features
+- **`smart_chunk` works with all providers.** API providers (OpenAI, Anthropic)
+  that lack token-level logprobs now use embedding cosine similarity between
+  sliding windows to detect topic boundaries. Works wherever embeddings are
+  available; only falls back to sentence splitting when neither logits nor
+  embeddings work.
+- **BEIR retrieval benchmark** (`benchmarks/beir_eval.py`). Downloads BEIR
+  datasets, indexes with MRSF + FAISS-only baseline, computes nDCG@10/Recall@10.
+  Includes automatic dataset download (fixed SSL via `requests`), nested zip
+  extraction handling, and docs generation to `docs/benchmarks/retrieval.md`.
+
+### Docs
+- README reorganized: `smart_chunk` is now the headline feature. Provider matrix
+  reordered. Delta compression section shortened and marked experimental.
+
+### Tests
+- 85 tests, 0 failures (up from 83).
+- `test_cross_version_read_raises` — validates Property P1 (version mismatch → `ValueError`).
+
+---
+
 ## [0.5.0] — 2026-05-10
 
 ### Breaking changes

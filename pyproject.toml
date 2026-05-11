@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pymrsf"
-version = "0.6.0"
-description = "Novelty-Aware RAG scoring — Filter chunks by information gain, not just relevance"
+version = "1.0.0"
+description = "Surprise-guided chunking and novelty-aware RAG scoring — split text at knowledge boundaries, filter by information gain"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Eric Monthe"}]

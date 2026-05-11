@@ -1,18 +1,18 @@
 """
 pymrsf — Model-Relative Semantic Filtering
 
-Use language model surprise signals for smarter RAG pipelines:
+Split text at knowledge boundaries and score RAG chunks by information gain:
 
-    from pymrsf import score_chunk, filter_chunks, smart_chunk, probe
+    from pymrsf import smart_chunk, score_chunk, filter_chunks, probe
+
+    # Chunk at natural topic boundaries using model surprise
+    pieces = smart_chunk(long_document)
 
     # Score a candidate chunk against a query
     result = score_chunk(chunk_text, query="What is backpropagation?")
 
     # Filter a list of chunks to the most relevant
     kept = filter_chunks(chunks, query="neural network training")
-
-    # Split text at semantic boundaries (surprise-guided)
-    pieces = smart_chunk(long_document)
 
     # Probe what the model already knows
     knowledge = probe("What is the Eiffel Tower?")
@@ -27,34 +27,6 @@ from dataclasses import dataclass, field
 
 from . import experimental
 
-# Experimental research backend — re-exported at top level for backward compat
-from .experimental import (
-    close_connections,
-    load_index,
-    mrsf_benchmark_canterbury,
-    mrsf_delete,
-    mrsf_inspect,
-    mrsf_latency_benchmark,
-    mrsf_read,
-    mrsf_read_novel,
-    mrsf_rebuild_explained,
-    mrsf_write,
-    rebuild_index,
-    reset_index_metadata,
-    save_index,
-)
-
-
-def rebuild_faiss_from_sqlite(*args, **kwargs):
-    """Deprecated alias for reset_index_metadata(). Removed in v0.6."""
-    import warnings
-    warnings.warn(
-        "rebuild_faiss_from_sqlite is deprecated and will be removed in v0.6. "
-        "Use pymrsf.reset_index_metadata() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return reset_index_metadata(*args, **kwargs)
 from . import cache
 from .cache import (
     clear_cache,
@@ -66,13 +38,12 @@ from .cache import (
 )
 from .chunker import smart_chunk
 from .core import (
-    LOGIT_PRECISION,
-    MODEL_VERSION,
-    PROVIDER,
     ModelSession,
     compute_delta,
     detokenize,
     get_backend,
+    get_model_version,
+    get_provider,
     get_raw_lm,
     get_surprises,
     next_token_greedy,
@@ -99,7 +70,7 @@ from .rag import (
     smart_filter,
 )
 
-__version__ = "0.6.0"
+__version__ = "1.0.0"
 
 
 # ── Centralized runtime configuration ─────────────────────────────────────────
@@ -111,23 +82,25 @@ class Config:
     Reads defaults from environment variables so existing .env setups
     continue to work. Override at runtime with configure().
 
-    Live-reconfigurable fields (take effect on next call):
-        provider, ollama_base, embed_model, embed_timeout,
-        default_relevance_cutoff, default_min_rag_score, default_diversity_threshold
-
-    Import-time only fields (model already loaded; changing has no effect):
-        model_path, n_ctx, n_gpu_layers, logit_precision
+    All fields are live-reconfigurable — model state is invalidated
+    automatically on changes to model-affecting fields.
     """
-    provider: str = field(default_factory=lambda: os.getenv("PYMRSF_PROVIDER", "local"))
+    provider: str = field(default_factory=lambda: os.getenv("PYMRSF_PROVIDER", "local").lower())
     model_path: str = field(
         default_factory=lambda: os.getenv("PYMRSF_MODEL_PATH", "./models/mistral-7b-v0.1.Q4_K_M.gguf")
     )
     n_ctx: int = field(default_factory=lambda: int(os.getenv("PYMRSF_N_CTX", "4096")))
     n_gpu_layers: int = field(default_factory=lambda: int(os.getenv("PYMRSF_N_GPU_LAYERS", "0")))
+    n_threads: int = field(default_factory=lambda: int(os.getenv("PYMRSF_N_THREADS", str(os.cpu_count() or 4))))
     ollama_base: str = field(default_factory=lambda: os.getenv("PYMRSF_OLLAMA_BASE", "http://localhost:11434"))
     embed_model: str = field(default_factory=lambda: os.getenv("PYMRSF_EMBED_MODEL", "nomic-embed-text"))
     embed_timeout: int = field(default_factory=lambda: int(os.getenv("PYMRSF_EMBED_TIMEOUT", "30")))
     embed_dim: int = field(default_factory=lambda: int(os.getenv("PYMRSF_EMBED_DIM", "768")))
+    model_version: str = field(default_factory=lambda: os.getenv("PYMRSF_MODEL_VERSION", ""))
+    surprise_threshold: float = field(default_factory=lambda: float(os.getenv("PYMRSF_SURPRISE_THRESHOLD", "-1.0")))
+    allow_provider_fallback: bool = field(
+        default_factory=lambda: os.getenv("PYMRSF_ALLOW_PROVIDER_FALLBACK", "false").lower() == "true"
+    )
     logit_precision: int = field(default_factory=lambda: int(os.getenv("PYMRSF_LOGIT_PRECISION", "6")))
     db_path: str = field(default_factory=lambda: os.getenv("PYMRSF_DB_PATH", "mrsf.db"))
     faiss_path: str = field(default_factory=lambda: os.getenv("PYMRSF_FAISS_PATH", "mrsf.faiss"))
@@ -137,6 +110,7 @@ class Config:
 
 
 _config = Config()
+_MODEL_AFFECTING_FIELDS = frozenset({"provider", "model_path", "n_ctx", "n_gpu_layers", "n_threads"})
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -165,19 +139,39 @@ def configure_logging(level: str = "INFO") -> None:
 def configure(**kwargs) -> Config:
     """Set global pymrsf configuration at runtime.
 
-    Accepts any field name from Config. Individual modules continue
-    to read os.getenv for now (backward compat with existing .env setups).
+    Accepts any field name from Config. When a model-affecting field changes
+    (provider, model_path, n_ctx, n_gpu_layers, n_threads), invalidates the
+    cached model state so the next call re-loads with the new settings.
 
     Example:
         import pymrsf
         pymrsf.configure(provider="openai", default_relevance_cutoff=0.40)
     """
     global _config
+    model_affected = False
+    provider_changed = False
+
     for k, v in kwargs.items():
-        if hasattr(_config, k):
-            setattr(_config, k, v)
-        else:
+        if not hasattr(_config, k):
             raise ValueError(f"Unknown config key: '{k}'. Valid keys: {list(_config.__dataclass_fields__)}")
+        if k in _MODEL_AFFECTING_FIELDS:
+            old = getattr(_config, k)
+            if old != v:
+                model_affected = True
+                if k == "provider":
+                    provider_changed = True
+                    v = v.lower()
+        setattr(_config, k, v)
+
+    if model_affected:
+        from . import core as _core
+        _core._lm = None
+        _core._lm_loaded = False
+        _core._backend = None
+
+    if provider_changed:
+        os.environ["PYMRSF_PROVIDER"] = _config.provider
+
     return _config
 
 
@@ -186,8 +180,20 @@ def get_config() -> Config:
     return _config
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
+def __getattr__(name):
+    """Resolve LOGIT_PRECISION live via core (not captured at import time)."""
+    if name == "LOGIT_PRECISION":
+        from .core import _logit_precision
+        return _logit_precision()
+    raise AttributeError(f"module 'pymrsf' has no attribute {name!r}")
+
+
 __all__ = [
-    # ── RAG scoring (headline API) ─────────────────────────────────────────────
+    # ── Chunking (headline API) ──────────────────────────────────────────────────
+    "smart_chunk",
+
+    # ── RAG scoring ──────────────────────────────────────────────────────────────
     "score_chunk",
     "score_chunks",
     "score_chunks_batch",
@@ -203,9 +209,6 @@ __all__ = [
     "score_chunk_async",
     "score_chunks_async",
     "filter_chunks_async",
-
-    # Chunking
-    "smart_chunk",
 
     # Knowledge probing
     "probe",
@@ -227,8 +230,8 @@ __all__ = [
     "get_raw_lm",
     "provider_capabilities",
     "set_provider",
-    "PROVIDER",
-    "MODEL_VERSION",
+    "get_provider",
+    "get_model_version",
     "LOGIT_PRECISION",
 
     # ── Cache ──────────────────────────────────────────────────────────────────
@@ -246,22 +249,8 @@ __all__ = [
     "get_config",
     "configure_logging",
 
-    # ── Experimental: MRSF storage backend ────────────────────────────────────
+    # ── Experimental research backend ──────────────────────────────────────────
     "experimental",
-    "mrsf_write",
-    "mrsf_read",
-    "mrsf_read_novel",
-    "mrsf_delete",
-    "rebuild_index",
-    "save_index",
-    "load_index",
-    "reset_index_metadata",
-    "rebuild_faiss_from_sqlite",  # Deprecated alias — removed in v0.6
-    "close_connections",
-    "mrsf_inspect",
-    "mrsf_rebuild_explained",
-    "mrsf_benchmark_canterbury",
-    "mrsf_latency_benchmark",
 
     # Version
     "__version__",
